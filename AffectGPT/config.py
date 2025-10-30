@@ -11,34 +11,34 @@ RESULT_ROOT = os.path.join(AFFECTGPT_ROOT, 'output/results')
 ## 所有模型的存储路径
 #######################
 PATH_TO_LLM = {
-    'Qwen25': 'models/Qwen2.5-7B-Instruct',
+    'Qwen25': '/data/testmllm/models/Qwen/Qwen2.5-7B-Instruct',
 }
 
 PATH_TO_VISUAL = {
-    'CLIP_VIT_LARGE': 'models/clip-vit-large-patch14',
+    'CLIP_VIT_LARGE': '/data/testmllm/models/AI-ModelScope/clip-vit-large-patch14',
 
 }
 
 PATH_TO_AUDIO = {
-    'HUBERT_LARGE':  'models/chinese-hubert-large',
+    'HUBERT_LARGE':  '/data/testmllm/models/pengzhendong/chinese-hubert-large',
 }
-
+BASE_DATA_DIR = '/data/testmllm/datasets/AffectGPT/'
 #######################
 ## 所有数据集的存储路径
 #######################
 DATA_DIR = {
-    'MER2025OV':      '../dataset/mer2025-dataset',
-    'MERCaptionPlus': '../dataset/mer2025-dataset',
-    'OVMERD':         '../dataset/mer2025-dataset',
-    'MER2023':        '../dataset/mer2023-dataset-process',
-    'MER2024':        '../dataset/mer2024-dataset-process',
-    'IEMOCAPFour':    '../dataset/iemocap-process',
-    'CMUMOSI':        '../dataset/cmumosi-process',
-    'CMUMOSEI':       '../dataset/cmumosei-process', 
-    'SIMS':           '../dataset/sims-process',
-    'SIMSv2':         '../dataset/simsv2-process',
-    'MELD':           '../dataset/meld-process', 
-    'OVMERDPlus':     '../dataset/ovmerdplus-process',
+    'MER2025OV':      os.path.join(BASE_DATA_DIR, 'mer2025-dataset'),
+    'MERCaptionPlus': os.path.join(BASE_DATA_DIR, 'mer2025-dataset'),
+    'OVMERD':         os.path.join(BASE_DATA_DIR, 'mer2025-dataset'),
+    'MER2023':        os.path.join(BASE_DATA_DIR, 'mer2023-dataset-process'),
+    'MER2024':        os.path.join(BASE_DATA_DIR, 'mer2024-dataset-process'),
+    'IEMOCAPFour':    os.path.join(BASE_DATA_DIR, 'iemocap-process'),
+    'CMUMOSI':        os.path.join(BASE_DATA_DIR, 'cmumosi-process'),
+    'CMUMOSEI':       os.path.join(BASE_DATA_DIR, 'cmumosei-process'), 
+    'SIMS':           os.path.join(BASE_DATA_DIR, 'sims-process'),
+    'SIMSv2':         os.path.join(BASE_DATA_DIR, 'simsv2-process'),
+    'MELD':           os.path.join(BASE_DATA_DIR, 'meld-process'), 
+    'OVMERDPlus':     os.path.join(BASE_DATA_DIR, 'ovmerdplus-process'),
 }
 
 PATH_TO_RAW_AUDIO = {

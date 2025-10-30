@@ -116,7 +116,9 @@ def get_emo2idx_idx2emo(dataset_cls):
 
 def func_read_batch_calling_model(modelname):
     model_path = config.PATH_TO_LLM[modelname]
-    llm = LLM(model=model_path)
+    # 禁用to or编译问题
+    # 设置compilation_config=0来完全禁用编译
+    llm = LLM(model=model_path, compilation_config=0, gpu_memory_utilization=0.6)
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     sampling_params = SamplingParams(temperature=0.7, top_p=0.8, repetition_penalty=1.05, max_tokens=512)
     return llm, tokenizer, sampling_params
@@ -309,7 +311,7 @@ if __name__ == "__main__":
     for modelname in [
                     'emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz',
                     ]:
-        for dataset in ["mer2023", "mer2024", "meld", "iemocapfour", "cmumosi", "cmumosei", "sims", "simsv2", "ovmerdplus"]:
+        for dataset in ["mer2023", "mer2024", "meld", "iemocapfour", "cmumosi", "cmumosei", "sims", "simsv2"]: #  "ovmerdplus"
             main_zeroshot_scores(f"output/results-{dataset}/{modelname}")
 
 

@@ -39,12 +39,19 @@ class Blip2Base(BaseModel):
         enable_autocast = self.device != torch.device("cpu")
 
         if enable_autocast:
-            if torch.__version__.startswith('2.4.0'):
+            if torch.__version__.startswith('2.8.0'):
+                return torch.amp.autocast('cuda', dtype=dtype)
+            elif torch.__version__.startswith('2.4.0'):
                 return torch.amp.autocast('cuda', dtype=dtype)
             elif torch.__version__.startswith('2.1.0'):
                 return torch.cuda.amp.autocast(dtype=dtype)
             else:
-                assert 1==0, f'unsupport torch version'
+                # 对于其他版本，尝试使用推荐的 torch.amp.autocast
+                try:
+                    return torch.amp.autocast('cuda', dtype=dtype)
+                except AttributeError:
+                    # 如果 torch.amp.autocast 不可用，回退到旧版本
+                    return torch.cuda.amp.autocast(dtype=dtype)
         else:
             return contextlib.nullcontext()
 

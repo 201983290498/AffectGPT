@@ -7,7 +7,9 @@
 
 import logging
 import math
-
+import torchvision.transforms.functional as F
+import sys
+sys.modules['torchvision.transforms.functional_tensor'] = F 
 import torch
 import torch.nn as nn
 import torchaudio

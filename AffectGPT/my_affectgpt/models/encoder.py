@@ -19,6 +19,7 @@ from my_affectgpt.models.base_model import BaseModel
 from my_affectgpt.models.Qformer import BertConfig, BertLMHeadModel
 from my_affectgpt.models.eva_vit import create_eva_vit_g
 from transformers import AutoTokenizer, AutoModel, AutoFeatureExtractor, AutoImageProcessor, Wav2Vec2FeatureExtractor
+from modelscope import HubertModel
 import config
 from my_affectgpt.models.blip2 import Blip2Base, disabled_train
 import einops
@@ -401,6 +402,7 @@ class HUBERT_LARGE(Blip2Base):
         model_dir = config.PATH_TO_AUDIO['HUBERT_LARGE']
 
         self.model = AutoModel.from_pretrained(model_dir)
+        # self.model = HubertModel.from_pretrained(model_dir)
         self.feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(model_dir)
 
         ## freeze the weights

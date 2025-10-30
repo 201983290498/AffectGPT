@@ -124,11 +124,12 @@ def get_user_message(dataset_cls, zeroshot, outside_user_message):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AffectGPT Inference Process")
-    parser.add_argument("--cfg-path", default='xxx', help="path to configuration file.")
+    parser.add_argument("--cfg-path", default='/data/testmllm/project/AffectGPT/AffectGPT/train_configs/emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz.yaml', help="path to configuration file.")
     parser.add_argument("--options",  nargs="+", help="override some settings in the used config, format: --option xx=xx yy=yy zz=zz")
-    parser.add_argument("--dataset", default='merbench', help="evaluate dataset")
+    # parser.add_argument("--dataset", default='merbench', help="evaluate dataset")
+    parser.add_argument("--dataset", default='inferenceData', help="evaluate dataset")
     parser.add_argument('--zeroshot', action='store_true', default=False, help='whether testing on zeroshot performance?')
-    parser.add_argument('--outside_user_message',  default=None, help="we use the outside user message, rather than dataset dependent.")
+    parser.add_argument('--outside_user_message',  default="Please infer the person's emotional state and provide your reasoning process.", help="we use the outside user message, rather than dataset dependent.")
     parser.add_argument('--outside_face_or_frame', default=None, help="we use the outside face_or_frame, rather than dataset dependent.")
     args = parser.parse_args()
     cfg = Config(args)
@@ -136,8 +137,8 @@ if __name__ == "__main__":
     datasets_cfg = cfg.datasets_cfg
     inference_cfg = cfg.inference_cfg
     device = 'cuda:{}'.format(inference_cfg.gpu)
-    inference_datasets = ['MER2023', 'MER2024', 'MELD', 'IEMOCAPFour', 'CMUMOSI', 'CMUMOSEI', 'SIMS', 'SIMSv2', 'OVMERDPlus']
-    
+    # inference_datasets = ['MER2023', 'MER2024', 'MELD', 'IEMOCAPFour', 'CMUMOSI', 'CMUMOSEI', 'SIMS', 'SIMSv2', 'OVMERDPlus']    
+    inference_datasets = ['CMUMOSEI', 'MER2023', 'MER2024', 'MELD', 'IEMOCAPFour', 'CMUMOSI', 'SIMS', 'SIMSv2']
 
     print ('======== Step1: cfg pre-analysis ========')
     # 支持 ckpt_root / ckpt_name 两种类型输入 => (ckpt3_root)
@@ -151,7 +152,7 @@ if __name__ == "__main__":
     else:
         print ('strat searching for suitable ckpt_root')
         cfg_name = os.path.basename(args.cfg_path)[:-len('.yaml')]
-        root_candidates = glob.glob(os.path.join('output', cfg_name, cfg_name+'*'))
+        root_candidates = glob.glob(os.path.join('/data/testmllm/models/AffectGPT/', cfg_name+'*'))
         ckpt3_root = search_for_ckpt_root(root_candidates)
     print ('processed ckpt3 root:')
     print (ckpt3_root)

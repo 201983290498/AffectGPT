@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -145,6 +147,55 @@ def set_config_messages(zeroshot, outside_user_message):
     elif zeroshot: # predict ov labels
         config.USER_MESSAGES = "Please recognize all possible emotional states of the character."
 
+def process_single_sample(args):
+    """处理单个样本的数据读取 - 多线程函数"""
+    name, subtitle, dataset_cls, ii, total_batches = args
+    print(f'process on {ii}|{total_batches}: {name} | {subtitle}')
+    # 在每个线程中重新设置 decord bridge，确保多线程兼容性
+    try:
+        import decord
+        decord.bridge.set_bridge('torch')
+    except:
+        pass
+    # 转成 cls 里面的支持类型进行 path 读取
+    sample = {'name': name}
+    video_path, image_path, audio_path, face_npy = None, None, None, None
+    if hasattr(dataset_cls, '_get_video_path'): 
+        video_path = dataset_cls._get_video_path(sample)
+    if hasattr(dataset_cls, '_get_audio_path'): 
+        audio_path = dataset_cls._get_audio_path(sample) 
+    if hasattr(dataset_cls, '_get_face_path'):  
+        face_npy = dataset_cls._get_face_path(sample)
+    if hasattr(dataset_cls, '_get_image_path'): 
+        image_path = dataset_cls._get_image_path(sample)
+    # 读取数据
+    sample_data = dataset_cls.read_frame_face_audio_text(video_path, face_npy, audio_path, image_path)
+    return name, sample_data
+
+def process_batch_multithreaded(name_batch, subtitle_batch, dataset_cls, ii, total_batches, max_workers=4):
+    """多线程处理批次数据"""
+    samples = {}
+    # 准备多线程参数
+    thread_args = [(name, subtitle, dataset_cls, ii, total_batches) 
+                   for name, subtitle in zip(name_batch, subtitle_batch)]
+    # 使用线程池并行处理
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = list(executor.map(process_single_sample, thread_args))
+    # 整合结果
+    for name, sample_data in results:
+        if len(samples) == 0:
+            for key in sample_data.keys():
+                samples[key] = []
+        for key in sample_data.keys():
+            samples[key].append(sample_data[key])
+    # 堆叠tensor数据
+    for key in ['audio', 'raw_audio', 'face', 'raw_face', 'image', 'raw_image', 'frame', 'raw_frame']:
+        if key in samples and samples[key][0] is None: 
+            samples[key] = None
+        elif key in samples:
+            samples[key] = torch.stack(samples[key], dim=0)
+    return samples
+
 
 
 if __name__ == "__main__":
@@ -244,30 +295,17 @@ if __name__ == "__main__":
             ## 主要处理函数 【费时的主要在这个部分】
             name2reason = {}
             batch_size = inference_cfg.get('batch_size', args.batch_size)
+            total_batches = len(test_names) // batch_size
+            
             for ii, start_idx in enumerate(range(0, len(test_names), batch_size)):
                 name_batch = test_names[start_idx: start_idx + batch_size]
                 subtitle_batch = [name2subtitle[name] for name in name_batch]
-                samples = {}
-                for name, subtitle in zip(name_batch, subtitle_batch):
-                    print (f'process on {ii}|{len(test_names)//batch_size}: {name} | {subtitle}')
-                    # 转成 cls 里面的支持类型进行 path 读取
-                    sample = {'name': name}
-                    video_path, image_path, audio_path, face_npy = None, None, None, None
-                    if hasattr(dataset_cls, '_get_video_path'): video_path = dataset_cls._get_video_path(sample)
-                    if hasattr(dataset_cls, '_get_audio_path'): audio_path = dataset_cls._get_audio_path(sample) 
-                    if hasattr(dataset_cls, '_get_face_path'):  face_npy   = dataset_cls._get_face_path(sample)
-                    if hasattr(dataset_cls, '_get_image_path'): image_path = dataset_cls._get_image_path(sample)
-                    sample_data = dataset_cls.read_frame_face_audio_text(video_path, face_npy, audio_path, image_path) # 读取数据
-                    if len(samples) == 0:
-                        for key in sample_data.keys():
-                            samples[key] = []
-                    for key in sample_data.keys():
-                        samples[key].append(sample_data[key])
-                for key in ['audio', 'raw_audio', 'face', 'raw_face', 'image', 'raw_image', 'frame', 'raw_frame']:
-                    if samples[key][0] is None: 
-                        samples[key] = None
-                    else:
-                        samples[key] = torch.stack(samples[key], dim=0)
+                
+                # 使用多线程处理批次数据
+                samples = process_batch_multithreaded(
+                    name_batch, subtitle_batch, dataset_cls, ii, total_batches, 
+                    max_workers=min(4, len(name_batch))  # 线程数不超过批次大小
+                )
                 # => img_list
                 audio_llms, frame_llms, face_llms, image_llms, multi_llms = None, None, None, None, None
                 audio_hiddens, audio_llms = chat.postprocess_audio(samples)  

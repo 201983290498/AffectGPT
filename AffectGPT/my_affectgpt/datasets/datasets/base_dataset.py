@@ -672,10 +672,14 @@ class BaseDataset(Dataset):
             label = instance['label']
             input_id = instance['text_input']
             # if self.train_mode: # 推理的时候不用加入eos
-            label    = torch.cat([torch.ones([1], dtype=input_id.dtype) * config.IGNORE_INDEX, label,
+            if self.train_mode:
+                label    = torch.cat([torch.ones([1], dtype=input_id.dtype) * config.IGNORE_INDEX, label,
                                 torch.ones([1], dtype=input_id.dtype) * self.tokenizer.eos_token_id]) # (-100  xxx <eos>)
-            input_id = torch.cat([torch.ones([1], dtype=input_id.dtype) * self.tokenizer.bos_token_id, input_id,
+                input_id = torch.cat([torch.ones([1], dtype=input_id.dtype) * self.tokenizer.bos_token_id, input_id,
                                 torch.ones([1], dtype=input_id.dtype) * self.tokenizer.eos_token_id]) # (<bos> xxx <eos>)
+            else:
+                label    = torch.cat([torch.ones([1], dtype=input_id.dtype) * config.IGNORE_INDEX, label]) # (-100  xxx)
+                input_id = torch.cat([torch.ones([1], dtype=input_id.dtype) * self.tokenizer.bos_token_id, input_id]) # (<bos> xxx)
             labels.append(label)
             input_ids.append(input_id)
 

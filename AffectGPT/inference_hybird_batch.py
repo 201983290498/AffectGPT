@@ -1,5 +1,4 @@
 import os
-import time
 import glob
 import argparse
 from llamafactory import data
@@ -29,7 +28,7 @@ from torch.utils.data import DataLoader
 
 import config
 from toolkit.utils.read_files import *
-
+from tqdm.auto import tqdm
 
 # 采用的是这个文件下存储数量最多的 root
 def search_for_ckpt_root(root_candidates):
@@ -225,10 +224,10 @@ if __name__ == "__main__":
                             inference_cfg=inference_cfg,
                             model_cfg=model_cfg)
             dataset_loader = DataLoader(dataset_cls, batch_size=args.batch_size, shuffle=False, num_workers=4, collate_fn=dataset_cls.collater)  # batch_size 可根据显存调整
-
+            len_dataloader = len(dataset_loader)
             ## 主要处理函数 【费时的主要在这个部分】
             name2reason = {}
-            for ii, batch in enumerate(dataset_loader):
+            for ii, batch in enumerate(tqdm(dataset_loader, total=len_dataloader)):
                 responses = chat.answer_batch(samples=batch, num_beams=1, temperature=1, do_sample=True, top_p=0.9, 
                                             max_new_tokens=1024, max_length=2000)
                 for name,response in zip(batch['sample_name'], responses):

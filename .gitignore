@@ -3,3 +3,8 @@ datasets/
 .vscode/
 */__pycache__/
 *.log
+AffectGPT/output/*
+AffectGPT/outputs/*
+trae_analysis/
+*.pyc
+*.pth

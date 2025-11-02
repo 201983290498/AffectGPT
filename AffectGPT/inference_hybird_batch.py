@@ -2,7 +2,9 @@ import os
 import time
 import glob
 import argparse
+from llamafactory import data
 import numpy as np
+from omegaconf import OmegaConf
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +25,7 @@ from my_affectgpt.common.dist_utils import get_rank
 from my_affectgpt.common.registry import registry
 from my_affectgpt.conversation.conversation_video import Chat
 from my_affectgpt.datasets.builders.image_text_pair_builder import * # 加载所有dataset cls
+from torch.utils.data import DataLoader
 
 import config
 from toolkit.utils.read_files import *
@@ -58,7 +61,6 @@ def search_for_ckpt_root(root_candidates):
 # case2: 指定 inference_cfg.test_epoch == a; 那就只跑这个 epoch 下的结果
 # case3: 指定 inference_cfg.test_epochs == a-b; 跑最后一个
 def get_ckpt3_candidates(ckpt3_root, inference_cfg):
-    
     if inference_cfg.test_epoch != 'xxx':
         cur_epoch = inference_cfg.test_epoch
         ckpts = glob.glob("%s/*%06d*.pth" %(ckpt3_root, int(cur_epoch)))
@@ -98,32 +100,60 @@ def get_face_or_frame(datasets_cfg, outside_face_or_frame):
     return face_or_frame
 
 
+def get_name2cls(dataset, dataset_cfg=None, inference_cfg=None, model_cfg=None):
+    vis_processor = BaseProcessor()
+    img_processor = BaseProcessor()
+    vis_processor_cfg = inference_cfg.get("vis_processor") # read vis processor
+    img_processor_cfg = inference_cfg.get("img_processor") # read img processor
+    if vis_processor_cfg is not None:
+        vis_processor = registry.get_processor_class(vis_processor_cfg.train.name).from_config(vis_processor_cfg.train)
+    if img_processor_cfg is not None:
+        img_processor = registry.get_processor_class(img_processor_cfg.train.name).from_config(img_processor_cfg.train)
+    kwargs = {'vis_processor': vis_processor, 'img_processor': img_processor, "dataset_cfg": dataset_cfg, "model_cfg": model_cfg}
+    if dataset == 'MER2023':          dataset_cls = MER2023_Dataset(**kwargs)
+    if dataset == 'MER2024':          dataset_cls = MER2024_Dataset(**kwargs)
+    if dataset == 'MELD':             dataset_cls = MELD_Dataset(**kwargs)
+    if dataset == 'IEMOCAPFour':      dataset_cls = IEMOCAPFour_Dataset(**kwargs)
+    if dataset == 'CMUMOSI':          dataset_cls = CMUMOSI_Dataset(**kwargs)
+    if dataset == 'CMUMOSEI':         dataset_cls = CMUMOSEI_Dataset(**kwargs)
+    if dataset == 'SIMS':             dataset_cls = SIMS_Dataset(**kwargs)
+    if dataset == 'SIMSv2':           dataset_cls = SIMSv2_Dataset(**kwargs)
+    if dataset == 'MER2025OV':        dataset_cls = MER2025OV_Dataset(**kwargs)
+    if dataset == 'OVMERDPlus':       dataset_cls = OVMERDPlus_Dataset(**kwargs)
+    dataset_cls.n_frms = model_cfg.vis_processor.train.n_frms
+    print ('dataset cls not provided!')
+    return dataset_cls
+
+
 # 优先级：zeroshot > dataset specific
-def get_user_message(dataset_cls, zeroshot, outside_user_message):
+def set_config_messages(zeroshot, outside_user_message):
+    # 设置全局的inference user message
     if outside_user_message is not None:
-        user_message = outside_user_message
+        config.USER_MESSAGES = outside_user_message
     elif zeroshot: # predict ov labels
-        user_message = dataset_cls.func_get_qa_ovlabel(sample=None, question_only=True)
-    return user_message
+        config.USER_MESSAGES = "Please recognize all possible emotional states of the character."
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AffectGPT Inference Process")
-    parser.add_argument("--cfg-path", default='xxx', help="path to configuration file.")
+    parser.add_argument("--cfg-path", default='/data/testmllm/project/AffectGPT/AffectGPT/train_configs/emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz.yaml', help="path to configuration file.")
     parser.add_argument("--options",  nargs="+", help="override some settings in the used config, format: --option xx=xx yy=yy zz=zz")
+    parser.add_argument("--dataset", default='merbench', help="evaluate dataset")
+    # parser.add_argument("--dataset", default='inferenceData', help="evaluate dataset")
+    parser.add_argument("--batch_size", default=128, type=int, help="batch size for inference")
     parser.add_argument('--zeroshot', action='store_true', default=False, help='whether testing on zeroshot performance?')
+    # parser.add_argument('--outside_user_message',  default="Please infer the person's emotional state and provide your reasoning process.", help="we use the outside user message, rather than dataset dependent.")
     parser.add_argument('--outside_user_message',  default=None, help="we use the outside user message, rather than dataset dependent.")
     parser.add_argument('--outside_face_or_frame', default=None, help="we use the outside face_or_frame, rather than dataset dependent.")
-    parser.add_argument('--video_path', default=None)
-    parser.add_argument('--audio_path', default=None)
-    parser.add_argument('--subtitle',  default=None)
     args = parser.parse_args()
     cfg = Config(args)
     model_cfg = cfg.model_cfg
     datasets_cfg = cfg.datasets_cfg
     inference_cfg = cfg.inference_cfg
     device = 'cuda:{}'.format(inference_cfg.gpu)
-    
+    # inference_datasets = ['MER2023', 'MER2024', 'MELD', 'IEMOCAPFour', 'CMUMOSI', 'CMUMOSEI', 'SIMS', 'SIMSv2', 'OVMERDPlus']
+    inference_datasets = ['CMUMOSEI', 'MER2024', 'IEMOCAPFour', 'SIMSv2']
+    set_config_messages(args.zeroshot, args.outside_user_message)
 
     print ('======== Step1: cfg pre-analysis ========')
     # 支持 ckpt_root / ckpt_name 两种类型输入 => (ckpt3_root)
@@ -137,7 +167,7 @@ if __name__ == "__main__":
     else:
         print ('strat searching for suitable ckpt_root')
         cfg_name = os.path.basename(args.cfg_path)[:-len('.yaml')]
-        root_candidates = glob.glob(os.path.join('output', cfg_name, cfg_name+'*'))
+        root_candidates = glob.glob(os.path.join('/data/testmllm/models/AffectGPT/', cfg_name+'*'))
         ckpt3_root = search_for_ckpt_root(root_candidates)
     print ('processed ckpt3 root:')
     print (ckpt3_root)
@@ -171,52 +201,39 @@ if __name__ == "__main__":
 
 
         print ('======== Step3: Inferece ========')
-        ## dataset_cls 内部在 train / inference 内部的更新
-        dataset_cls = MER2025OV_Dataset()
-        dataset_cls.needed_data = dataset_cls.get_needed_data(face_or_frame)
-        dataset_cls.vis_processor = BaseProcessor()
-        dataset_cls.img_processor = BaseProcessor()
-        vis_processor_cfg = inference_cfg.get("vis_processor") # read vis processor
-        img_processor_cfg = inference_cfg.get("img_processor") # read img processor
-        if vis_processor_cfg is not None:
-            dataset_cls.vis_processor = registry.get_processor_class(vis_processor_cfg.train.name).from_config(vis_processor_cfg.train)
-        if img_processor_cfg is not None:
-            dataset_cls.img_processor = registry.get_processor_class(img_processor_cfg.train.name).from_config(img_processor_cfg.train)
-        dataset_cls.n_frms = model_cfg.vis_processor.train.n_frms
+        if args.dataset == 'inferenceData':
+            process_datasets = inference_datasets
+        else:
+            names = args.dataset.split(',')
+            process_datasets = names
+        print ('process datasets: ', process_datasets)
 
+        ## for each dataset
+        for dataset in process_datasets:
+            print (f'current dataset: {dataset}')
+            ## 定义结果存储位置，如果存在相应路径直接跳过
+            save_root = os.path.join(inference_cfg.base_root + f'-{dataset.lower()}', # output/results-{dataset}/ckpt3_name
+                                    os.path.basename(ckpt3_root)) 
+            if not os.path.exists(save_root): os.makedirs(save_root)
+            epoch = os.path.basename(cfg.model_cfg.ckpt_3)[:-4]
+            save_path = '%s/%s.npz' %(save_root, epoch) # output/result-{dataset}/ckpt3_name/epochname
+            if os.path.exists(save_path): continue
+            
+            ## dataset_cls 内部在 train / inference 内部的更新
+            dataset_cls = get_name2cls(dataset, 
+                            dataset_cfg=OmegaConf.create({"face_or_frame": face_or_frame, "label_type": "hybird"}),
+                            inference_cfg=inference_cfg,
+                            model_cfg=model_cfg)
+            dataset_loader = DataLoader(dataset_cls, batch_size=args.batch_size, shuffle=False, num_workers=4, collate_fn=dataset_cls.collater)  # batch_size 可根据显存调整
 
-        ## main process for one sample        
-        subtitle = args.subtitle
-        video_path = args.video_path
-        audio_path = args.audio_path
-        image_path = None
-        face_npy = None
-        sample_data = dataset_cls.read_frame_face_audio_text(video_path, face_npy, audio_path, image_path)
-
-        # => img_list
-        audio_llms, frame_llms, face_llms, image_llms, multi_llms = None, None, None, None, None
-        audio_hiddens, audio_llms = chat.postprocess_audio(sample_data)  
-        frame_hiddens, frame_llms = chat.postprocess_frame(sample_data)
-        face_hiddens,  face_llms  = chat.postprocess_face(sample_data)
-        _,             image_llms = chat.postprocess_image(sample_data)
-        if face_or_frame.startswith('multiface'):
-            _, multi_llms = chat.postprocess_multi(face_hiddens, audio_hiddens)
-        elif face_or_frame.startswith('multiframe'):
-            _, multi_llms = chat.postprocess_multi(frame_hiddens, audio_hiddens)
-
-        img_list = {}
-        img_list['audio'] = audio_llms
-        img_list['frame'] = frame_llms
-        img_list['face']  = face_llms
-        img_list['image'] = image_llms
-        img_list['multi'] = multi_llms
-
-        # get prompt (if use zeroshot => ov labels; else => dataset specific question)
-        user_message = get_user_message(dataset_cls, args.zeroshot, args.outside_user_message)
-        prompt = dataset_cls.get_prompt_for_multimodal(face_or_frame, subtitle, user_message)
-        
-        # => call function
-        response = chat.answer_sample(tmp_prompt=prompt, img_list=img_list,
-                                    num_beams=1, temperature=1, do_sample=True, top_p=0.9, 
-                                    max_new_tokens=1200, max_length=2000) # llama: max_token_num=2048
-        print (response)
+            ## 主要处理函数 【费时的主要在这个部分】
+            name2reason = {}
+            for ii, batch in enumerate(dataset_loader):
+                responses = chat.answer_batch(samples=batch, num_beams=1, temperature=1, do_sample=True, top_p=0.9, 
+                                            max_new_tokens=1024, max_length=2000)
+                for name,response in zip(batch['sample_name'], responses):
+                    name2reason[name] = response
+                    print (f'{name}: {response}')
+                
+            print ('save results')
+            np.savez_compressed(save_path, name2reason=name2reason)

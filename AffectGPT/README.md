@@ -126,8 +126,7 @@ AffectGPT
 
 ### Training
 ```bash
-CUDA_VISIBLE_DEVICES=0 python -u train.py 
---cfg-path=train_configs/emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz.yaml
+CUDA_VISIBLE_DEVICES=0 pybug 5678 train.py  --cfg-path=train_configs/emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz.yaml
 ```
 
 ### Inference Code for MER-UniBench
@@ -147,15 +146,10 @@ AffectGPT
 2. Inference Process 
 ```bash
 # Prompt1: Generate OV labels
-CUDA_VISIBLE_DEVICES=0 python -u inference_hybird.py --zeroshot --dataset='inferenceData' 
---cfg-path=train_configs/emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz.yaml 
---options "inference.test_epochs=30-60" "inference.skip_epoch=5"
+PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=3 pybug 5678 inference_hybird.py --zeroshot --dataset='inferenceData' --options "inference.test_epochs=30-60" "inference.skip_epoch=5" --cfg-path=train_configs/emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz.yaml  
 
 # Prompt2: Generate Emotion Description
-CUDA_VISIBLE_DEVICES=0 python -u inference_hybird.py --zeroshot --dataset='inferenceData' 
---outside_user_message="Please infer the person's emotional state and provide your reasoning process."
---cfg-path=train_configs/emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz.yaml 
---options "inference.test_epochs=30-60" "inference.skip_epoch=5" "inference.base_root=output/results-description"
+PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=1 python inference_hybird.py --zeroshot --dataset='inferenceData' --outside_user_message="Please infer the person's emotional state and provide your reasoning process."   --options "inference.test_epochs=30-60" "inference.skip_epoch=5" "inference.base_root=output/results-description" --cfg-path=train_configs/emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz.yaml
 ```
 
 
@@ -209,7 +203,7 @@ AffectGPT
 2. You can use any tool to extract audio and subtitle from video.
 ```bash
 [1] generate ov labels
-CUDA_VISIBLE_DEVICES=0 python -u inference_sample.py --zeroshot
+CUDA_VISIBLE_DEVICES=0 pybug 5678 -u inference_sample.py --zeroshot
 --video_path='demo/sample_00000000.mp4' --audio_path='demo/sample_00000000.wav' --subtitle="I don't know! I, I, I don't have experience in this area."
 --cfg-path=train_configs/mercaptionplus_outputhybird_bestsetup_bestfusion_frame_lz.yaml 
 --options "inference.test_epoch=30"
@@ -279,3 +273,6 @@ The codebase of AffectGPT is adapted from [**Video-LLaMA**](https://github.com/D
 
 This project is released under the Apache 2.0 license as found in the LICENSE file.
 The service is a research preview intended for **non-commercial use ONLY**. Please get in touch with us if you find any potential violations.
+
+## 实验发现
+padding的方向对最后的结果有影响，建议训练的时候用`padding_side='right'`, 推理的时候用`padding_side='left'`.

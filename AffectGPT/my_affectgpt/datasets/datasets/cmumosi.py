@@ -38,11 +38,16 @@ class CMUMOSI_Dataset(BaseDataset):
             print (f'Read data type: ######{self.face_or_frame}######')
             self.needed_data = self.get_needed_data(self.face_or_frame)
             print (self.needed_data) # ['audio', 'frame', 'face']
+            
+        self.user_messages = config.USER_MESSAGES
+        self.train_mode = True
+        if self.user_messages is not None:
+            self.train_mode = False
         
         ################# 直接手动指定所有信息的存储路径 #################
         ## read train/test splits
         label_path = config.PATH_TO_LABEL[self.dataset]
-        corpus = np.load(label_path, allow_pickle=True)['train_corpus'].tolist()
+        corpus = np.load(label_path, allow_pickle=True)['train_corpus' if self.train_mode else 'test_corpus'].tolist()
         train_names = [name                for name in corpus]
         train_emos  = [corpus[name]['val'] for name in corpus]
         self.train_names = train_names

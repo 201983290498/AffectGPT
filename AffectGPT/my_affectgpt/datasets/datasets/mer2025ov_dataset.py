@@ -122,10 +122,15 @@ class MER2025OV_Dataset(BaseDataset):
             print (f'Read data type: ######{self.face_or_frame}######')
             self.needed_data = self.get_needed_data(self.face_or_frame)
             print (self.needed_data) # ['audio', 'frame', 'face']
-        
-        ################# 直接手动指定所有信息的存储路径 #################
+
+        self.user_messages = config.USER_MESSAGES
+        self.train_mode = True
+        if self.user_messages is not None:
+            self.train_mode = False
+            
+        ################# 直接手动指定所有信息的存储路径，读取sub_title路径，实际上就是读取transcriptions.csv #################
         name2subtitle = {}
-        subtitle_csv = config.PATH_TO_TRANSCRIPTIONS[self.dataset]
+        subtitle_csv = config.PATH_TO_TRANSCRIPTIONS[self.dataset] if self.train_mode else os.path.join(config.DATA_DIR[self.dataset], 'track_all_candidates.csv')
         df = pd.read_csv(subtitle_csv)
         for _, row in df.iterrows():
             name = row['name']
@@ -133,10 +138,12 @@ class MER2025OV_Dataset(BaseDataset):
             if pd.isna(subtitle): subtitle=""
             name2subtitle[name] = subtitle
         self.name2subtitle = name2subtitle
+        self.samples_names = list(self.name2subtitle.keys())
+        
         
         vis_root = config.PATH_TO_RAW_VIDEO[self.dataset]
         wav_root = config.PATH_TO_RAW_AUDIO[self.dataset]
-        face_root= config.PATH_TO_RAW_FACE[self.dataset]
+        face_root = config.PATH_TO_RAW_FACE[self.dataset]
         ##################################################################
 
         # use base model initialize approach
@@ -149,15 +156,15 @@ class MER2025OV_Dataset(BaseDataset):
                          model_cfg=model_cfg,
                          dataset_cfg=dataset_cfg)
         
-    def _get_video_path(self, sample):
+    def _get_video_path(self, sample): # 根据样本名获取样本的视频路径
         full_video_fp = os.path.join(self.vis_root, sample['name'] + '.mp4')
         return full_video_fp
     
-    def _get_audio_path(self, sample):
+    def _get_audio_path(self, sample): # 根据样本名获取样本的音频路径
         full_audio_fp = os.path.join(self.wav_root, sample['name'] + '.wav')
         return full_audio_fp
 
-    def _get_face_path(self, sample):
+    def _get_face_path(self, sample): # 根据样本名获取样本的人脸路径
         full_face_fp = os.path.join(self.face_root, sample['name'], sample['name'] + '.npy')
         return full_face_fp
     

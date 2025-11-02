@@ -190,7 +190,7 @@ class CLIP_VIT_LARGE(Blip2Base):
             param.requires_grad = False
         self.model = self.model.eval()
 
-        self.hidden_size = self.model.config.projection_dim # 768
+        self.hidden_size = self.model.config.projection_dim # 768 用于做投影层
         print('====== All these parameters are fixed during training!! ======')
 
     
@@ -200,7 +200,7 @@ class CLIP_VIT_LARGE(Blip2Base):
         batch_size, _, time_length, _, _ = raw_image.size()
         raw_image = einops.rearrange(raw_image, 'b c t h w -> (b t) h w c')
 
-        raw_image = func_VideoReader_to_Image(raw_image)
+        raw_image = func_VideoReader_to_Image(raw_image) # processor里面处理的是PIL image
         inputs = self.processor(images=raw_image, return_tensors="pt")['pixel_values']
         inputs = inputs.to(device)
         embeddings = self.model.get_image_features(inputs) # [(b, t) h]

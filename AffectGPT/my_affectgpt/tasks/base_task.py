@@ -14,7 +14,7 @@ from my_affectgpt.common.dist_utils import get_rank, get_world_size, is_main_pro
 from my_affectgpt.common.logger import MetricLogger, SmoothedValue
 from my_affectgpt.common.registry import registry
 from my_affectgpt.datasets.data_utils import prepare_sample
-
+from packaging import version
 # main process: model, dataset, training, evaluation, ...
 class BaseTask:
     def __init__(self, **kwargs):
@@ -148,10 +148,10 @@ class BaseTask:
             lr_scheduler.step(cur_epoch=inner_epoch, cur_step=i)
 
             # (amp, scaler) for amp training [不同版本下，调用的方式存在差别]
-            if torch.__version__.startswith('2.4.0'):
+            if version.parse(torch.__version__) >= version.parse("2.4"):
                 with torch.amp.autocast('cuda', enabled=use_amp):
                     loss = self.train_step(model=model, samples=samples)
-            elif torch.__version__.startswith('2.1.0'):
+            elif version.parse(torch.__version__) >= version.parse("2.1"):
                 with torch.cuda.amp.autocast(enabled=use_amp):
                     loss = self.train_step(model=model, samples=samples)
             else:

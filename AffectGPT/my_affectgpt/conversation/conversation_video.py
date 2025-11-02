@@ -1,3 +1,4 @@
+from genericpath import samefile
 import re
 import copy
 import dataclasses
@@ -8,13 +9,15 @@ import numpy as np
 
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, LlamaTokenizer
-from transformers import StoppingCriteria, StoppingCriteriaList
+from transformers import StoppingCriteriaList
 from my_affectgpt.common.registry import registry
 from my_affectgpt.processors import Blip2ImageEvalProcessor
 from my_affectgpt.processors.video_processor import ToTHWC, ToUint8, load_video, load_face
 from my_affectgpt.models.ImageBind.data import load_audio, transform_audio
+from my_affectgpt.models.affectgpt import StoppingCriteriaSub
 from my_affectgpt.datasets.builders.image_text_pair_builder import *
 import config
+from my_affectgpt.datasets.data_utils import move_to_cuda
 
 class SeparatorStyle(Enum):
     """Different separator style."""
@@ -82,16 +85,6 @@ class Conversation:
         }
 
 
-class StoppingCriteriaSub(StoppingCriteria):
-    def __init__(self, stops=[], encounters=1):
-        super().__init__()
-        self.stops = stops
-
-    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor):
-        for stop in self.stops:
-            if torch.all((stop == input_ids[0][-len(stop):])).item():
-                return True
-        return False
 
 
 default_conversation = Conversation(
@@ -135,7 +128,8 @@ class Chat:
                                    padding="longest",
                                    max_length=max_length,
                                    truncation=True,
-                                   add_special_tokens=False).input_ids[0]
+                                   padding_side="left",
+                                   add_special_tokens=False).input_ids
         return input_ids
 
     def replace_token_for_multimodal(self, prompt):
@@ -154,36 +148,48 @@ class Chat:
     def postprocess_audio(self, sample_data):
         if sample_data['audio'] is None:
             return None, None
-        
-        audio = sample_data['audio'].unsqueeze(0).to(self.device)
-        raw_audio = sample_data['raw_audio'].unsqueeze(0).to(self.device)
+        if len(sample_data['audio'].size()) == 4:
+            sample_data['audio'] = sample_data['audio'].unsqueeze(0)
+        audio = sample_data['audio'].to(self.device)
+        if len(sample_data['raw_audio'].size()) == 3:
+            sample_data['raw_audio'] = sample_data['raw_audio'].unsqueeze(0)
+        raw_audio = sample_data['raw_audio'].to(self.device)
         audio_hiddens, audio_llms = self.model.encode_audio_merge(audio, raw_audio)
         return audio_hiddens, audio_llms
 
     def postprocess_face(self, sample_data):
         if sample_data['face'] is None:
             return None, None
-        
-        face = sample_data['face'].unsqueeze(0).to(self.device) # [1, 3, 8, 224, 224]
-        raw_face = sample_data['raw_face'].unsqueeze(0).to(self.device) # [1, 3, 8, 224, 224]
+        if len(sample_data['face'].size()) == 4:
+            sample_data['face'] = sample_data['face'].unsqueeze(0)# [1, 3, 8, 224, 224]
+        face = sample_data['face'].to(self.device)
+        if len(sample_data['raw_face'].size()) == 4:
+            sample_data['raw_face'] = sample_data['raw_face'].unsqueeze(0)# [1, 3, 8, 224, 224]
+        raw_face = sample_data['raw_face'].to(self.device)
         face_hiddens, face_llms = self.model.encode_video_merge(face, raw_face)
         return face_hiddens, face_llms
     
     def postprocess_frame(self, sample_data):
         if sample_data['frame'] is None:
             return None, None
-        
-        video = sample_data['frame'].unsqueeze(0).to(self.device) # [1, 3, 8, 224, 224]
-        raw_video = sample_data['raw_frame'].unsqueeze(0).to(self.device) # [1, 3, 8, 224, 224]
+        if len(sample_data['frame'].size()) == 4:
+            sample_data['frame'] = sample_data['frame'].unsqueeze(0)# [1, 3, 8, 224, 224]
+        video = sample_data['frame'].to(self.device)
+        if len(sample_data['raw_frame'].size()) == 4:
+            sample_data['raw_frame'] = sample_data['raw_frame'].unsqueeze(0)# [1, 3, 8, 224, 224]
+        raw_video = sample_data['raw_frame'].to(self.device)
         frame_hiddens, frame_llms = self.model.encode_video_merge(video, raw_video)
         return frame_hiddens, frame_llms
 
     def postprocess_image(self, sample_data):
         if sample_data['image'] is None:
             return None, None
-        
-        image = sample_data['image'].unsqueeze(0).to(self.device) # [1, 3, 8, 224, 224]
-        raw_image = sample_data['raw_image'].unsqueeze(0).to(self.device) # [1, 3, 8, 224, 224]
+        if len(sample_data['image'].size()) == 4:
+            sample_data['image'] = sample_data['image'].unsqueeze(0) # [1, 3, 8, 224, 224]
+        image = sample_data['image'].to(self.device)
+        if len(sample_data['raw_image'].size()) == 4:
+            sample_data['raw_image'] = sample_data['raw_image'].unsqueeze(0) # [1, 3, 8, 224, 224]
+        raw_image = sample_data['raw_image'].to(self.device)
         image_hiddens, image_llms = self.model.encode_image_merge(image, raw_image)
         return image_hiddens, image_llms
 
@@ -197,10 +203,13 @@ class Chat:
 
     
     # 整体过程就是在模拟inference过程 => 尝试完全按照 training 的方式进行读写
-    def answer_sample(self, prompt, img_list, num_beams=1, temperature=1.0, do_sample=True,  top_p=0.9,
+    def answer_sample(self, tmp_prompt, img_list, num_beams=1, temperature=1.0, do_sample=True,  top_p=0.9,
                     max_new_tokens=1000, min_length=1, max_length=2000, repetition_penalty=1.0, length_penalty=1.0):
         
-        
+        if type(tmp_prompt) == str:
+            prompt = [tmp_prompt]
+        else:
+            prompt = tmp_prompt
         IMAGE_PATCH_TOKEN_ID = self.tokenizer.get_vocab()[config.DEFAULT_IMAGE_PATCH_TOKEN]
         AUDIO_PATCH_TOKEN_ID = self.tokenizer.get_vocab()[config.DEFAULT_AUDIO_PATCH_TOKEN]
         FRAME_PATCH_TOKEN_ID = self.tokenizer.get_vocab()[config.DEFAULT_FRAME_PATCH_TOKEN]
@@ -209,9 +218,8 @@ class Chat:
 
         ###### step1: => (input_id, attention_mask) 
         ## replace and add
-        prompt = self.replace_token_for_multimodal(prompt)
+        prompt = [self.replace_token_for_multimodal(sub_prompt) for sub_prompt in prompt]
         input_id = self.to_token_ids(prompt, max_length)
-        print (prompt)
         
         ## length limits
         current_max_len = len(input_id) + max_new_tokens
@@ -230,32 +238,32 @@ class Chat:
         temp_input_id[temp_input_id == MULTI_PATCH_TOKEN_ID] = 0
         temp_input_id[temp_input_id == IMAGE_PATCH_TOKEN_ID] = 0
         cur_input_embeds = self.model.llama_model.model.model.embed_tokens(temp_input_id)
-        cur_input_ids = input_id
         
         # replace <ImageHere>, <AudioHere>, <FrameHere>, <FaceHere> with features
-        cur_idx = 0
-        for (patch_token_id, query_token_number, embeds) in [(FRAME_PATCH_TOKEN_ID, self.num_video_query_token, img_list['frame']),
-                                                            (FACE_PATCH_TOKEN_ID,  self.num_video_query_token, img_list['face']),
-                                                            (AUDIO_PATCH_TOKEN_ID, self.num_audio_query_token, img_list['audio']),
-                                                            (MULTI_PATCH_TOKEN_ID, self.num_multi_query_token, img_list['multi']),
-                                                            (IMAGE_PATCH_TOKEN_ID, self.num_image_query_token, img_list['image']),
-                                                            ]:
-            if (cur_input_ids == patch_token_id).sum() != 0:
-                assert embeds is not None, f'Some input info is missing.'
-                cur_features = embeds[cur_idx]
-                if (cur_input_ids == patch_token_id).sum() != query_token_number:
-                    raise ValueError("The number of audio patch tokens should be the same as the number of audio patches.")
-                masked_indices = torch.where(cur_input_ids == patch_token_id)[0]
-                mask_index_start = masked_indices[0]
-                if (masked_indices != torch.arange(mask_index_start, mask_index_start+query_token_number, device=masked_indices.device, dtype=masked_indices.dtype)).any():
-                    raise ValueError("The image patch tokens should be consecutive.")
-                cur_input_embeds = torch.cat((cur_input_embeds[:mask_index_start], 
-                                            cur_features, 
-                                            cur_input_embeds[mask_index_start+query_token_number:]), dim=0)
-                    
-        cur_input_embeds = cur_input_embeds.unsqueeze(0) 
-        attention_mask = attention_mask.unsqueeze(0) 
+        new_input_embeds = []
+        for cur_idx, (cur_input_ids, cur_input_embed) in enumerate(zip(input_id, cur_input_embeds)):
+            for (patch_token_id, query_token_number, embeds) in [(FRAME_PATCH_TOKEN_ID, self.num_video_query_token, img_list['frame']),
+                                                                (FACE_PATCH_TOKEN_ID,  self.num_video_query_token, img_list['face']),
+                                                                (AUDIO_PATCH_TOKEN_ID, self.num_audio_query_token, img_list['audio']),
+                                                                (MULTI_PATCH_TOKEN_ID, self.num_multi_query_token, img_list['multi']),
+                                                                (IMAGE_PATCH_TOKEN_ID, self.num_image_query_token, img_list['image']),
+                                                                ]:
+                if (cur_input_ids == patch_token_id).sum() != 0:
+                    assert embeds is not None, f'Some input info is missing.'
+                    cur_features = embeds[cur_idx]
+                    if (cur_input_ids == patch_token_id).sum() != query_token_number:
+                        raise ValueError("The number of audio patch tokens should be the same as the number of audio patches.")
+                    masked_indices = torch.where(cur_input_ids == patch_token_id)[0]
+                    mask_index_start = masked_indices[0]
+                    if (masked_indices != torch.arange(mask_index_start, mask_index_start+query_token_number, device=masked_indices.device, dtype=masked_indices.dtype)).any():
+                        raise ValueError("The image patch tokens should be consecutive.")
+                    cur_input_embed = torch.cat((cur_input_embed[:mask_index_start], 
+                                                cur_features, 
+                                                cur_input_embed[mask_index_start+query_token_number:]), dim=0)
+            new_input_embeds.append(cur_input_embed)
+        cur_input_embeds = torch.stack(new_input_embeds, dim=0) if len(new_input_embeds) > 1 else cur_input_embeds[0].unsqueeze(0)
         ###### step3: (inputs_embeds, attention_masks) => response
+        
         outputs = self.model.llama_model.generate(
             inputs_embeds=cur_input_embeds,
             attention_mask=attention_mask,
@@ -270,13 +278,37 @@ class Chat:
             temperature=temperature,
         )
 
+
         ###### step4: convert to batch samples 
         # maybe <bos> aaa <stop token> bbb <eos>
-        response = self.tokenizer.decode(outputs[0], add_special_tokens=False)
-        if response.find(self.tokenizer.bos_token) != -1:
-            response = response.split(self.tokenizer.bos_token)[1]
-        if response.find(self.tokenizer.eos_token) != -1:
-            response = response.split(self.tokenizer.eos_token)[0]
-        response = response.rsplit('###', 1)[0] # split from stop tokens '###'
-        response = response.split('Assistant:')[-1].strip()
-        return response
+        responses = self.tokenizer.batch_decode(outputs, add_special_tokens=False)
+        results = []
+        for response in responses:
+            if response.find(self.tokenizer.bos_token) != -1:
+                response = response.split(self.tokenizer.bos_token)[1]
+            if response.find(self.tokenizer.eos_token) != -1:
+                response = response.split(self.tokenizer.eos_token)[0]
+            response = response.rsplit('###', 1)[0] # split from stop tokens '###'
+            results.append(response.split('Assistant:')[-1].strip())
+        return results if type(tmp_prompt) != str else results[0]
+
+    def answer_batch(self, samples, num_beams=1, temperature=0.3, do_sample=True,  top_p=0.9,
+                    max_new_tokens=1000, min_length=1, max_length=2000, repetition_penalty=1.0, length_penalty=1.0):
+        if 'cpu' not in str(self.device):
+            samples = move_to_cuda(samples)
+        outputs = self.model.generate(samples, num_beams=num_beams, temperature=temperature, do_sample=do_sample, top_p=top_p,
+                    max_new_tokens=max_new_tokens, min_length=min_length, max_length=max_length,
+                    repetition_penalty=repetition_penalty, length_penalty=length_penalty
+                    )
+        responses = self.tokenizer.batch_decode(outputs, add_special_tokens=False)
+        results = []
+        for response in responses:
+            if response.find(self.tokenizer.bos_token) != -1:
+                response = response.split(self.tokenizer.bos_token)[1]
+            if response.find(self.tokenizer.eos_token) != -1:
+                response = response.split(self.tokenizer.eos_token)[0]
+            response = response.rsplit('###', 1)[0] # split from stop tokens '###'
+            response = response.split('Assistant:')[-1].strip()
+            results.append(response)
+        return results
+        

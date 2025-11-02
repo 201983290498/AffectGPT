@@ -179,7 +179,7 @@ def load_audio(
         return None
 
     audio_outputs = []
-    clip_sampler = ConstantClipsPerVideoSampler(
+    clip_sampler = ConstantClipsPerVideoSampler( # 对于短音频，均匀采样，有重复数据，例如3秒，duration=2， clips=3，0-2s，0.5-2.5s， 1～3s；对于长数据，均匀采样不重复数据，例如10s，duration=2，clips=4，0-2s，2-4s，4-6s，6-8s
         clip_duration=clip_duration, clips_per_video=clips_per_video
     ) # each audio extract 8 frames
 
@@ -188,7 +188,7 @@ def load_audio(
         # resample to 16k
         if sr != sample_rate:
             waveform = torchaudio.functional.resample(waveform, orig_freq=sr, new_freq=sample_rate)
-        # if two channels, convert to one channel
+        # 将多声道的特征转换为单声道
         if waveform.shape[0] == 2:
             waveform = waveform.mean(dim=0, keepdim=True)
 
@@ -200,7 +200,7 @@ def load_audio(
             temp_vectors[:, :wav_lens] = waveform
             waveform = temp_vectors
         ###################################
-
+        
         all_clips_timepoints = get_clip_timepoints(
             clip_sampler, waveform.size(1) / sample_rate
         )
@@ -216,7 +216,7 @@ def load_audio(
     return torch.stack(audio_outputs, dim=0)
 
 
-# all_clips: [8, 1, 16000*2s]
+# all_clips: [8, 1, 16000*2s] 函数的功能是 将音频波形数据转换为标准化的梅尔频谱特征
 def transform_audio(
     all_clips,
     device,

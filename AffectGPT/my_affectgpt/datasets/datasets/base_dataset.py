@@ -1,3 +1,4 @@
+from cProfile import label
 import os
 import tqdm
 import copy
@@ -17,8 +18,10 @@ import transformers
 from my_affectgpt.processors.video_processor import load_video, load_face
 from my_affectgpt.models.ImageBind.data import load_audio, transform_audio
 import config
+from torch.utils.data import Dataset
 
-class BaseDataset():
+# 包含一些最基础的功能，例如init初始化；辅助调试；样本获取，主要是获取图片、文本、帧数据等、以及获取到对应的prompt；提示词的构建；batch的合并
+class BaseDataset(Dataset):
     def __init__(self, vis_processor=None, txt_processor=None, img_processor=None, model_cfg=None, dataset_cfg=None,
                 vis_root=None, ann_path=None, wav_root=None, face_root=None, img_root=None):
         
@@ -29,9 +32,9 @@ class BaseDataset():
         self.wav_root = wav_root
         self.ann_path = ann_path
         self.face_root = face_root
-        self.vis_processor = vis_processor
-        self.txt_processor = txt_processor
-        self.img_processor = img_processor
+        self.vis_processor = vis_processor # 读图片进行预处理。主要是图片增强。
+        self.txt_processor = txt_processor # 读文本进行预处理。
+        self.img_processor = img_processor # 读图像进行预处理。主要是图像增强。
         self.model_cfg = model_cfg
         self.dataset_cfg = dataset_cfg
 
@@ -47,19 +50,19 @@ class BaseDataset():
 
         ####################################
         ## part2: (model_cfg, dataset_cfg) specific ones
-        if model_cfg is None or dataset_cfg is None: return
+        if model_cfg is None or dataset_cfg is None:  return
         
-        self.max_length = model_cfg.max_length
-        self.num_video_query_token = model_cfg.num_video_query_token
-        self.num_audio_query_token = model_cfg.num_audio_query_token
+        self.max_length = model_cfg.max_length # 序列的长度
+        self.num_video_query_token = model_cfg.num_video_query_token # 进行语义压缩
+        self.num_audio_query_token = model_cfg.num_audio_query_token # 进行语义压缩
         self.num_multi_query_token = model_cfg.num_multi_query_token
         self.num_image_query_token = model_cfg.num_image_query_token
 
         ## 控制视频采样的帧数
-        self.n_frms = model_cfg.vis_processor.train.n_frms
+        self.n_frms = model_cfg.vis_processor.train.n_frms # 图像预处理时长，8帧
 
         # 这里token的设置和 affectgpt.py 中的一致 (所以这部分调用改成全局调用了)
-        self.tokenizer = load_tokenizer_from_LLM(model_cfg.llama_model)
+        self.tokenizer = load_tokenizer_from_LLM(model_cfg.llama_model) # 添加特殊token
         self.IMAGE_PATCH_TOKEN_ID = self.tokenizer.get_vocab()[config.DEFAULT_IMAGE_PATCH_TOKEN]
         self.AUDIO_PATCH_TOKEN_ID = self.tokenizer.get_vocab()[config.DEFAULT_AUDIO_PATCH_TOKEN]
         self.FRAME_PATCH_TOKEN_ID = self.tokenizer.get_vocab()[config.DEFAULT_FRAME_PATCH_TOKEN]
@@ -73,14 +76,18 @@ class BaseDataset():
 
         ####################################
         ## part3: debug
+        print("============debug dataset readings ...=============")
         sample1 = self.__getitem__(random.randint(0, len(self)-1))
         sample2 = self.__getitem__(random.randint(0, len(self)-1))
         sample3 = self.__getitem__(random.randint(0, len(self)-1))
         self.func_visualize_samples(sample1)
+        print("-----next sample-----")
         self.func_visualize_samples(sample2)
+        print("-----next sample-----")
         self.func_visualize_samples(sample3)
         samples = [sample1, sample2, sample3]
         self.collater(samples)
+        print("============debug dataset readings ...=============")
 
         ## debug2: for all datasets (whether contains errors)
         # print ('Debug: whether all data are readable?')
@@ -113,7 +120,7 @@ class BaseDataset():
         return input_ids
 
 
-    def func_map_valence_to_emotion(self, valence):
+    def func_map_valence_to_emotion(self, valence): # 根据 valence 值来映射到情感类别
         if valence > 0:
             return 'positive'
         elif valence < 0:
@@ -122,7 +129,7 @@ class BaseDataset():
             return 'neutral'
         
 
-    def get_cur_label_type(self, label_type_candidates, label_type):
+    def get_cur_label_type(self, label_type_candidates, label_type): # 根据 label_type_candidates 和 label_type 来获取当前的 label_type
         if label_type == 'hybird':
             index = random.randint(0, len(label_type_candidates) -1)
             return label_type_candidates[index]
@@ -131,20 +138,20 @@ class BaseDataset():
             return label_type
         
     
-    def func_random_prompts(self, candidates):
+    def func_random_prompts(self, candidates): # 从候选prompts中随机采样一个
         index = random.randint(0, len(candidates) - 1)
         prompt = candidates[index]
         return prompt
     
     
-    # 随机采样一个 annotations
-    def func_random_sample_subset(self, annotations, ratio=0.1):
+    # 随机采样一个 annotations，比例为 ratio
+    def func_random_sample_subset(self, annotations, ratio=0.1): # 从 annotations 中随机采样 ratio 比例的样本
         annotations_subset = random.sample(annotations, int(len(annotations)*ratio))
         return annotations_subset
 
 
     ###########################################################
-    ## 数据读取部分操作
+    ## 数据读取部分操作，决定读取的数据格式。
     ###########################################################
     # all types: {audio, frame, face, image}
     def get_needed_data(self, face_or_frame):
@@ -212,16 +219,16 @@ class BaseDataset():
                 sampling ="uniform",
                 return_msg=True
             )
-            face = self.vis_processor.transform(raw_face) # [3, 8, 224, 224] # 建议可视化，看看这部分数据扩增是否合适
+            face = self.vis_processor.transform(raw_face) # [3, 8, 224, 224] # 建议可视化，看看这部分数据扩增是否合适,主要是对图片进行数据变换。
         sample_data['face'] = face
         sample_data['raw_face'] = raw_face
         # print (sample_data)
 
-        # step3: read audio [需要针对没有 audio track 的 video 进行额外处理]
+        # step3: read audio [需要针对没有 audio track 的 video 进行额外处理，这里对音频进行采样了]
         audio, raw_audio = None, None
         if audio_path is not None and 'audio' in self.needed_data:
-            raw_audio = load_audio([audio_path], "cpu", clips_per_video=8)[0] # [8, 1, 16000*2s]
-            audio = transform_audio(raw_audio, "cpu") # [8, 1, 128, 204]
+            raw_audio = load_audio([audio_path], "cpu", clips_per_video=8)[0] # [8, 1, 16000*2s]，对audio也进行均匀采样。
+            audio = transform_audio(raw_audio, "cpu") # [8, 1, 128, 204] # 转换成梅尔频谱特征
         sample_data['audio'] = audio
         sample_data['raw_audio'] = raw_audio
         # print (sample_data)
@@ -373,13 +380,16 @@ class BaseDataset():
         }
 
     ## 获取 <question, answer> 用于后续训练
-    def get_qa_pairs(self, dataset, label_type, sample):
+    def get_qa_pairs(self, dataset, sample):
         
         '''
         self.  -> 数据集全局的内容
         sample -> 样本局部的内容
         '''
+        if self.user_messages is not None:
+            return {"question": self.user_messages, "answer": None}
         # EMERFine 指的是 (training set) 那 332 samples，同时包含 ovlabel/description
+        cur_label_type = self.get_cur_label_type(self.label_type_candidates, self.label_type)
         if dataset in ['EMERCoarse', 'EMERFine']:
             candidates = {
                 'description': self.func_get_qa_description(sample),
@@ -458,7 +468,7 @@ class BaseDataset():
                 'caption': self.func_get_qa_caption(sample, 'audio'),
             }
 
-        return candidates[label_type] # 包含 question, answer 两部分内容
+        return candidates[cur_label_type] # 包含 question, answer 两部分内容
 
 
     def get_prompt_for_multimodal(self, face_or_frame, subtitle, user_message):
@@ -571,9 +581,7 @@ class BaseDataset():
         for _ in range(num_retries):
             try:
                 sample = self.annotation[index]
-                cur_label_type = self.get_cur_label_type(self.label_type_candidates, self.label_type)
-                # print ('cur_label_type: ', cur_label_type)
-
+                
                 # step1: read needed data
                 video_path, image_path, audio_path, face_npy = None, None, None, None
                 if hasattr(self, '_get_video_path'): video_path = self._get_video_path(sample)
@@ -585,7 +593,7 @@ class BaseDataset():
 
                 # step2: read (question, answer)
                 # => 如果 sample 中缺少 qa 对应内容的信息，结果是会报错的
-                qa_pair = self.get_qa_pairs(self.dataset, cur_label_type, sample)
+                qa_pair = self.get_qa_pairs(self.dataset, sample)
                 # print (qa_pair)
 
                 # step4: generate (text_input, label)
@@ -597,9 +605,12 @@ class BaseDataset():
                 ## tokenizer [每部分内容不能超过 self.max_length, 且两部分内容的和也不能超过 self.max_length]
                 prompt_id = self.to_token_ids(prompt, self.max_length) # => 避免 GPU OOM
                 
-                target = qa_pair['answer'] + '###'
-                # print (target)
-                target_id = self.to_token_ids(target, self.max_length)
+                if self.train_mode: # answer 可能为空; 训练数据同时有 question 和 answer; 推理数据只有 question
+                    target = qa_pair['answer'] + '###'
+                    # print (target)
+                    target_id = self.to_token_ids(target, self.max_length)
+                else:
+                    target_id = torch.tensor([], dtype=prompt_id.dtype)
 
                 text_input = torch.cat([prompt_id, target_id])
                 label = torch.cat([torch.ones([len(prompt_id)], dtype=text_input.dtype) * -100, target_id])
@@ -631,6 +642,7 @@ class BaseDataset():
             "text_input": text_input,
             'dataset': self.dataset.lower(),
             'face_or_frame': self.face_or_frame,
+            'sample_name': sample['name'],
         }
 
         
@@ -653,27 +665,30 @@ class BaseDataset():
                     labels:   [-100..., -100, ....,                                 ...                xxx###-100...,        ...     xxx###, -100, ...]
                     images:   [bs=3, c=3, 224, 224]
         '''
+        
         labels = []
         input_ids = []
         for instance in instances:
             label = instance['label']
             input_id = instance['text_input']
+            # if self.train_mode: # 推理的时候不用加入eos
             label    = torch.cat([torch.ones([1], dtype=input_id.dtype) * config.IGNORE_INDEX, label,
-                                  torch.ones([1], dtype=input_id.dtype) * self.tokenizer.eos_token_id]) # (-100  xxx <eos>)
+                                torch.ones([1], dtype=input_id.dtype) * self.tokenizer.eos_token_id]) # (-100  xxx <eos>)
             input_id = torch.cat([torch.ones([1], dtype=input_id.dtype) * self.tokenizer.bos_token_id, input_id,
-                                  torch.ones([1], dtype=input_id.dtype) * self.tokenizer.eos_token_id]) # (<bos> xxx <eos>)
+                                torch.ones([1], dtype=input_id.dtype) * self.tokenizer.eos_token_id]) # (<bos> xxx <eos>)
             labels.append(label)
             input_ids.append(input_id)
 
         # pad bacth input into the same length 
         # => input_ids: <bos> xxx <eos> <pad>
         # => label    : -100  xxx <eos> -100
-        input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, 
-                                                    batch_first=True, 
-                                                    padding_value=self.tokenizer.pad_token_id)
-        labels    = torch.nn.utils.rnn.pad_sequence(labels,    
-                                                    batch_first=True, 
-                                                    padding_value=config.IGNORE_INDEX)
+        if self.train_mode:
+            input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id)
+            labels    = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=config.IGNORE_INDEX)
+        else:
+            input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id, padding_side='left')
+            labels    = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=config.IGNORE_INDEX, padding_side='left')
+            
         batch = dict(
             labels=labels,
             input_ids=input_ids,
@@ -692,6 +707,7 @@ class BaseDataset():
         
         batch['dataset'] = instances[0]['dataset']
         batch['face_or_frame'] = instances[0]['face_or_frame']
+        batch['sample_name'] = [instance['sample_name'] for instance in instances]
         return batch
     
 

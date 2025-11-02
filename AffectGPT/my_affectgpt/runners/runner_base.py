@@ -149,7 +149,9 @@ class RunnerBase:
 
         if amp:
             if self._scaler is None:
-                if torch.__version__.startswith('2.4.0'):
+                if torch.__version__.startswith('2.8.0'):
+                    self._scaler = torch.amp.GradScaler('cuda')  
+                elif torch.__version__.startswith('2.4.0'):
                     self._scaler = torch.amp.GradScaler('cuda')
                 elif torch.__version__.startswith('2.1.0'):
                     self._scaler = torch.cuda.amp.GradScaler()
@@ -197,20 +199,16 @@ class RunnerBase:
     @property
     def dataloaders(self) -> dict:
         """
-        A property to get and create dataloaders by split just in need.
+        这是一个属性，用于按需按数据划分获取并创建 dataloader。
 
-        If no train_dataset_ratio is provided, concatenate map-style datasets and
-        chain wds.DataPipe datasets separately. Training set becomes a tuple
-        (ConcatDataset, ChainDataset), both are optional but at least one of them is
-        required. The resultant ConcatDataset and ChainDataset will be sampled evenly.
+        如果没有提供 train_dataset_ratio，会分别对 map-style 数据集进行拼接（concatenate），并对 wds.DataPipeline 类型的数据集进行链式组合（chain）。训练集将变为一个元组 (ConcatDataset, ChainDataset)，两者都是可选的，但至少需要其中之一。得到的 ConcatDataset 和 ChainDataset 将被均匀采样。
 
-        If train_dataset_ratio is provided, create a MultiIterLoader to sample
-        each dataset by ratios during training.
+        如果提供了 train_dataset_ratio，则会创建一个 MultiIterLoader，在训练期间按给定比例对各个数据集进行采样。
 
-        Currently do not support multiple datasets for validation and test.
+        当前不支持对验证集和测试集使用多个数据集。
 
-        Returns:
-            dict: {split_name: (tuples of) dataloader}
+        返回：
+        dict: {split_name: （dataloader 的（元）组）}
         """
         if self._dataloaders is None:
 
@@ -374,7 +372,7 @@ class RunnerBase:
         self.output_dir = output_dir
 
     ############################
-    ## main training process
+    ## main training process 主要的训练流程。
     ############################
     def train(self):
         start_time = time.time()
@@ -593,21 +591,21 @@ class RunnerBase:
     @main_process
     def _save_checkpoint(self, cur_epoch, train_stats=None, is_best=False):
         """
-        Save the checkpoint at the current epoch. (only for trainable params)
+        保存当前 epoch 的检查点。（仅保存可训练参数）
         """
         ## case1: 原始保存方式
         model_no_ddp = self.unwrap_dist_model(self.model)
-        param_grad_dic = { # {param: whether trainable}
+        param_grad_dic = { # {参数名: 是否可训练}
             k: v.requires_grad for (k, v) in model_no_ddp.named_parameters()
         }
-        state_dict = model_no_ddp.state_dict() # {param: weight}
+        state_dict = model_no_ddp.state_dict() # {参数名: 权重}
         for k in list(state_dict.keys()):
             if k in param_grad_dic.keys() and not param_grad_dic[k]:
-                # delete parameters that do not require gradient
+                # 删除不需要梯度的参数
                 del state_dict[k]
         save_obj = {
-            "model": state_dict, # only save trainable params
-            "optimizer": self.optimizer.state_dict(), # first time will generate 'self._optimizer'
+            "model": state_dict, # 只保存可训练参数
+            "optimizer": self.optimizer.state_dict(), # 第一次会生成 'self._optimizer'
             "config": self.config.to_dict(),
             "scaler": self.scaler.state_dict() if self.scaler else None,
             "epoch": cur_epoch,
@@ -615,7 +613,7 @@ class RunnerBase:
 
         if is_best:
             save_to = os.path.join(self.output_dir, "checkpoint_best.pth")
-        elif not train_stats: # 模型的 zero-shot performance
+        elif not train_stats: # 模型的 zero-shot 性能
             save_to = os.path.join(self.output_dir, "checkpoint_%06d_loss_%s.pth" %(cur_epoch, '0.000'))
         else:
             save_to = os.path.join(self.output_dir, "checkpoint_%06d_loss_%s.pth" %(cur_epoch, train_stats['loss']))
@@ -671,7 +669,7 @@ class RunnerBase:
             raise RuntimeError("checkpoint url or path is invalid")
 
         state_dict = checkpoint["model"]
-        self.unwrap_dist_model(self.model).load_state_dict(state_dict)
+        self.unwrap_dist_model(self.model).load_state_dict(state_dict) # load_state_dict 会根据字典自动去覆盖模型的对应的部分。
 
         self.optimizer.load_state_dict(checkpoint["optimizer"])
         if self.scaler and "scaler" in checkpoint:

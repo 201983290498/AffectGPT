@@ -77,7 +77,7 @@ def main():
         cfg=cfg,
         job_id=job_id, 
         task=task, 
-        model=model, 
+        model=model,
         datasets=datasets
     )
     runner.train()

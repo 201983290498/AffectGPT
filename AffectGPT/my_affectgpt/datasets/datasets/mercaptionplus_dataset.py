@@ -33,10 +33,15 @@ class MERCaptionPlus_Dataset(BaseDataset):
             self.face_or_frame = dataset_cfg.face_or_frame
             print (f'Read data type: ######{self.label_type}######')
             print (f'Read data type: ######{self.face_or_frame}######')
-            self.needed_data = self.get_needed_data(self.face_or_frame)
+            self.needed_data = self.get_needed_data(self.face_or_frame) # 获取多模态所需的模态特征。主要是 audio, frame, face
             print (self.needed_data) # ['audio', 'frame', 'face']
-        
-        ################# 直接手动指定所有信息的存储路径 #################
+
+        self.user_messages = config.USER_MESSAGES
+        self.train_mode = True
+        if self.user_messages is not None:
+            self.train_mode = False
+            
+        ################# 直接手动指定所有信息的存储路径，获取标签文件和描述文件 #################
         ov_path = os.path.join(config.DATA_DIR[self.dataset], 'track2_train_mercaptionplus.csv')
         name2openset = {}
         df = pd.read_csv(ov_path)
@@ -56,7 +61,7 @@ class MERCaptionPlus_Dataset(BaseDataset):
             reason = row['reason']
             name2reason[name] = reason
         self.name2reason = name2reason
-
+        # 获取对应的字幕信息
         name2subtitle = {}
         subtitle_csv = config.PATH_TO_TRANSCRIPTIONS[self.dataset]
         df = pd.read_csv(subtitle_csv)

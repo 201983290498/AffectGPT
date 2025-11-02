@@ -22,12 +22,12 @@ class Registry:
 
     @classmethod
     def register_builder(cls, name):
-        r"""Register a dataset builder to registry with key 'name'
+        r"""将数据集构建器以键 'name' 注册到注册表
 
-        Args:
-            name: Key with which the builder will be registered.
+        参数:
+            name: 用于注册构建器的键。
 
-        Usage:
+        用法:
 
             from affectgpt.common.registry import registry
             from affectgpt.datasets.base_dataset_builder import BaseDatasetBuilder
@@ -38,12 +38,12 @@ class Registry:
 
             assert issubclass(
                 builder_cls, BaseDatasetBuilder
-            ), "All builders must inherit BaseDatasetBuilder class, found {}".format(
+            ), "所有构建器必须继承 BaseDatasetBuilder 类, 当前为 {}".format(
                 builder_cls
             )
             if name in cls.mapping["builder_name_mapping"]:
                 raise KeyError(
-                    "Name '{}' already registered for {}.".format(
+                    "名称 '{}' 已注册为 {}。".format(
                         name, cls.mapping["builder_name_mapping"][name]
                     )
                 )
@@ -54,12 +54,12 @@ class Registry:
 
     @classmethod
     def register_task(cls, name):
-        r"""Register a task to registry with key 'name'
+        r"""将任务以键 'name' 注册到注册表
 
-        Args:
-            name: Key with which the task will be registered.
+        参数:
+            name: 用于注册任务的键。
 
-        Usage:
+        用法:
 
             from affectgpt.common.registry import registry
         """
@@ -69,10 +69,10 @@ class Registry:
 
             assert issubclass(
                 task_cls, BaseTask
-            ), "All tasks must inherit BaseTask class"
+            ), "所有任务必须继承 BaseTask 类"
             if name in cls.mapping["task_name_mapping"]:
                 raise KeyError(
-                    "Name '{}' already registered for {}.".format(
+                    "名称 '{}' 已注册为 {}。".format(
                         name, cls.mapping["task_name_mapping"][name]
                     )
                 )
@@ -83,12 +83,12 @@ class Registry:
 
     @classmethod
     def register_model(cls, name):
-        r"""Register a task to registry with key 'name'
+        r"""将模型以键 'name' 注册到注册表
 
-        Args:
-            name: Key with which the task will be registered.
+        参数:
+            name: 用于注册模型的键。
 
-        Usage:
+        用法:
 
             from affectgpt.common.registry import registry
         """
@@ -98,10 +98,10 @@ class Registry:
 
             assert issubclass(
                 model_cls, BaseModel
-            ), "All models must inherit BaseModel class"
+            ), "所有模型必须继承 BaseModel 类"
             if name in cls.mapping["model_name_mapping"]:
                 raise KeyError(
-                    "Name '{}' already registered for {}.".format(
+                    "名称 '{}' 已注册为 {}。".format(
                         name, cls.mapping["model_name_mapping"][name]
                     )
                 )
@@ -112,12 +112,12 @@ class Registry:
 
     @classmethod
     def register_processor(cls, name):
-        r"""Register a processor to registry with key 'name'
+        r"""将处理器以键 'name' 注册到注册表
 
-        Args:
-            name: Key with which the task will be registered.
+        参数:
+            name: 用于注册处理器的键。
 
-        Usage:
+        用法:
 
             from affectgpt.common.registry import registry
         """
@@ -127,10 +127,10 @@ class Registry:
 
             assert issubclass(
                 processor_cls, BaseProcessor
-            ), "All processors must inherit BaseProcessor class"
+            ), "所有处理器必须继承 BaseProcessor 类"
             if name in cls.mapping["processor_name_mapping"]:
                 raise KeyError(
-                    "Name '{}' already registered for {}.".format(
+                    "名称 '{}' 已注册为 {}。".format(
                         name, cls.mapping["processor_name_mapping"][name]
                     )
                 )
@@ -142,11 +142,11 @@ class Registry:
 
     @classmethod
     def register_visual_encoder(cls, name):
-       
+        # 注册视觉编码器
         def wrap(encoder_cls):
             if name in cls.mapping["visual_encoder_mapping"]:
                 raise KeyError(
-                    "Name '{}' already registered for {}.".format(
+                    "名称 '{}' 已注册为 {}。".format(
                         name, cls.mapping["visual_encoder_mapping"][name]
                     )
                 )
@@ -158,11 +158,11 @@ class Registry:
 
     @classmethod
     def register_acoustic_encoder(cls, name):
-       
+        # 注册声学编码器
         def wrap(encoder_cls):
             if name in cls.mapping["acoustic_encoder_mapping"]:
                 raise KeyError(
-                    "Name '{}' already registered for {}.".format(
+                    "名称 '{}' 已注册为 {}。".format(
                         name, cls.mapping["acoustic_encoder_mapping"][name]
                     )
                 )
@@ -174,12 +174,12 @@ class Registry:
 
     @classmethod
     def register_lr_scheduler(cls, name):
-        r"""Register a model to registry with key 'name'
+        r"""将学习率调度器以键 'name' 注册到注册表
 
-        Args:
-            name: Key with which the task will be registered.
+        参数:
+            name: 用于注册调度器的键。
 
-        Usage:
+        用法:
 
             from affectgpt.common.registry import registry
         """
@@ -187,7 +187,7 @@ class Registry:
         def wrap(lr_sched_cls):
             if name in cls.mapping["lr_scheduler_name_mapping"]:
                 raise KeyError(
-                    "Name '{}' already registered for {}.".format(
+                    "名称 '{}' 已注册为 {}。".format(
                         name, cls.mapping["lr_scheduler_name_mapping"][name]
                     )
                 )
@@ -198,12 +198,12 @@ class Registry:
 
     @classmethod
     def register_runner(cls, name):
-        r"""Register a model to registry with key 'name'
+        r"""将运行器以键 'name' 注册到注册表
 
-        Args:
-            name: Key with which the task will be registered.
+        参数:
+            name: 用于注册运行器的键。
 
-        Usage:
+        用法:
 
             from affectgpt.common.registry import registry
         """
@@ -211,7 +211,7 @@ class Registry:
         def wrap(runner_cls):
             if name in cls.mapping["runner_name_mapping"]:
                 raise KeyError(
-                    "Name '{}' already registered for {}.".format(
+                    "名称 '{}' 已注册为 {}。".format(
                         name, cls.mapping["runner_name_mapping"][name]
                     )
                 )
@@ -222,28 +222,28 @@ class Registry:
 
     @classmethod
     def register_path(cls, name, path):
-        r"""Register a path to registry with key 'name'
+        r"""将路径以键 'name' 注册到注册表
 
-        Args:
-            name: Key with which the path will be registered.
+        参数:
+            name: 用于注册路径的键。
 
-        Usage:
+        用法:
 
             from affectgpt.common.registry import registry
         """
-        assert isinstance(path, str), "All path must be str."
+        assert isinstance(path, str), "所有路径必须为字符串。"
         if name in cls.mapping["paths"]:
-            raise KeyError("Name '{}' already registered.".format(name))
+            raise KeyError("名称 '{}' 已注册。".format(name))
         cls.mapping["paths"][name] = path
 
     @classmethod
     def register(cls, name, obj):
-        r"""Register an item to registry with key 'name'
+        r"""将项以键 'name' 注册到注册表
 
-        Args:
-            name: Key with which the item will be registered.
+        参数:
+            name: 用于注册项的键。
 
-        Usage::
+        用法::
 
             from affectgpt.common.registry import registry
 
@@ -257,7 +257,7 @@ class Registry:
                 current[part] = {}
             current = current[part]
 
-        current[path[-1]] = obj # add 'configuration' -> <affectgpt.common.config.Config object at 0x7f9bf84b1370>
+        current[path[-1]] = obj # 添加 'configuration' -> <affectgpt.common.config.Config object at 0x7f9bf84b1370>
 
 
     '''
@@ -342,15 +342,12 @@ class Registry:
 
     @classmethod
     def get(cls, name, default=None, no_warning=False):
-        r"""Get an item from registry with key 'name'
+        r"""从注册表中以键 'name' 获取项
 
-        Args:
-            name (string): Key whose value needs to be retrieved.
-            default: If passed and key is not in registry, default value will
-                     be returned with a warning. Default: None
-            no_warning (bool): If passed as True, warning when key doesn't exist
-                               will not be generated. Useful for MMF's
-                               internal operations. Default: False
+        参数:
+            name (string): 需要检索值的键。
+            default: 如果未找到键且传入该参数，则返回默认值并警告。默认: None
+            no_warning (bool): 如果为 True，则未找到键时不警告。用于 MMF 的内部操作。默认: False
         """
         original_name = name
         name = name.split(".")
@@ -366,18 +363,17 @@ class Registry:
             and no_warning is False
         ):
             cls.mapping["state"]["writer"].warning(
-                "Key {} is not present in registry, returning default value "
-                "of {}".format(original_name, default)
+                "键 {} 不在注册表中, 返回默认值 {}".format(original_name, default)
             )
         return value
 
     @classmethod
     def unregister(cls, name):
-        r"""Remove an item from registry with key 'name'
+        r"""从注册表中移除以键 'name' 的项
 
-        Args:
-            name: Key which needs to be removed.
-        Usage::
+        参数:
+            name: 需要移除的键。
+        用法::
 
             from mmf.common.registry import registry
 

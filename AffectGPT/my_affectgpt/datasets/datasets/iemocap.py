@@ -47,7 +47,12 @@ class IEMOCAPFour_Dataset(BaseDataset):
             print (f'Read data type: ######{self.face_or_frame}######')
             self.needed_data = self.get_needed_data(self.face_or_frame)
             print (self.needed_data) # ['audio', 'frame', 'face']
-        
+
+        self.user_messages = config.USER_MESSAGES
+        self.train_mode = True
+        if self.user_messages is not None:
+            self.train_mode = False
+            
         ################# 直接手动指定所有信息的存储路径 #################
         ## read train/test splits
         label_path = config.PATH_TO_LABEL[self.dataset]

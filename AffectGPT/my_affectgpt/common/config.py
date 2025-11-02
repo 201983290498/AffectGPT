@@ -33,9 +33,9 @@ class Config:
             return opts
         
         has_equal = opts[0].find("=") != -1
-        if has_equal:
+        if has_equal: # --options "key=value" "key2=value2"
             return opts
-        return [(opt + "=" + value) for opt, value in zip(opts[0::2], opts[1::2])]
+        return [(opt + "=" + value) for opt, value in zip(opts[0::2], opts[1::2])] # --options key1 value1 key2 value2
     
     @staticmethod
     def build_runner_config(cfg_path, **kwargs):
@@ -86,7 +86,7 @@ class Config:
 
         inference_config = OmegaConf.create()
         if "inference" in kwargs:
-            inference_config = OmegaConf.merge(
+            inference_config = OmegaConf.merge( # 实现配置的覆盖，放在最下面的配置优先级最高
                 inference_config,
                 {"inference": config["inference"]},      
                 {"inference": kwargs["inference"]}

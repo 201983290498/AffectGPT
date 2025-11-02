@@ -28,6 +28,14 @@ from omegaconf import OmegaConf
 import config
 from toolkit.utils.read_files import *
 
+def set_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 # 采用的是这个文件下存储数量最多的 root
 def search_for_ckpt_root(root_candidates):
@@ -137,11 +145,14 @@ def set_config_messages(zeroshot, outside_user_message):
     elif zeroshot: # predict ov labels
         config.USER_MESSAGES = "Please recognize all possible emotional states of the character."
 
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AffectGPT Inference Process")
     parser.add_argument("--cfg-path", default='/data/testmllm/project/AffectGPT/AffectGPT/train_configs/emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz.yaml', help="path to configuration file.")
     parser.add_argument("--options",  nargs="+", help="override some settings in the used config, format: --option xx=xx yy=yy zz=zz")
     parser.add_argument("--dataset", default='merbench', help="evaluate dataset")
+    parser.add_argument("--batch_size", default=1, type=int, help="batch size for inference")
     # parser.add_argument("--dataset", default='inferenceData', help="evaluate dataset")
     parser.add_argument('--zeroshot', action='store_true', default=False, help='whether testing on zeroshot performance?')
     # parser.add_argument('--outside_user_message',  default="Please infer the person's emotional state and provide your reasoning process.", help="we use the outside user message, rather than dataset dependent.")
@@ -155,7 +166,7 @@ if __name__ == "__main__":
     device = 'cuda:{}'.format(inference_cfg.gpu)
     # inference_datasets = ['MER2023', 'MER2024', 'MELD', 'IEMOCAPFour', 'CMUMOSI', 'CMUMOSEI', 'SIMS', 'SIMSv2', 'OVMERDPlus']
     inference_datasets = ['CMUMOSEI', 'MER2024', 'IEMOCAPFour', 'SIMSv2']
-    set_config_messages(args.zeroshot, args.outside_user_message)
+    set_config_messages(args.zeroshot, args.outside_user_message)   
     print ('======== Step1: cfg pre-analysis ========')
     # 支持 ckpt_root / ckpt_name 两种类型输入 => (ckpt3_root)
     # 默认情况是依据 os.path.basename(args.cfg_path) 找到 => (ckpt3_root)
@@ -182,7 +193,7 @@ if __name__ == "__main__":
     face_or_frame = get_face_or_frame(datasets_cfg, args.outside_face_or_frame)
     print (f'Read data type: {face_or_frame}')
     print ('=======================================')
-
+    
 
     ## main process for each ckpt3 candidates
     for ii, ckpt_3 in enumerate(whole_ckpt3s):
@@ -232,52 +243,57 @@ if __name__ == "__main__":
 
             ## 主要处理函数 【费时的主要在这个部分】
             name2reason = {}
-            for ii, name in enumerate(test_names):
-                subtitle = name2subtitle[name]
-                print (f'process on {ii}|{len(test_names)}: {name} | {subtitle}')
-
-                # 转成 cls 里面的支持类型进行 path 读取
-                sample = {'name': name}
-                video_path, image_path, audio_path, face_npy = None, None, None, None
-                if hasattr(dataset_cls, '_get_video_path'): video_path = dataset_cls._get_video_path(sample)
-                if hasattr(dataset_cls, '_get_audio_path'): audio_path = dataset_cls._get_audio_path(sample) 
-                if hasattr(dataset_cls, '_get_face_path'):  face_npy   = dataset_cls._get_face_path(sample)
-                if hasattr(dataset_cls, '_get_image_path'): image_path = dataset_cls._get_image_path(sample)
-                sample_data = dataset_cls.read_frame_face_audio_text(video_path, face_npy, audio_path, image_path) # 读取数据
-                # print (sample_data['face'].shape)
-
+            batch_size = inference_cfg.get('batch_size', args.batch_size)
+            for ii, start_idx in enumerate(range(0, len(test_names), batch_size)):
+                name_batch = test_names[start_idx: start_idx + batch_size]
+                subtitle_batch = [name2subtitle[name] for name in name_batch]
+                samples = {}
+                for name, subtitle in zip(name_batch, subtitle_batch):
+                    print (f'process on {ii}|{len(test_names)//batch_size}: {name} | {subtitle}')
+                    # 转成 cls 里面的支持类型进行 path 读取
+                    sample = {'name': name}
+                    video_path, image_path, audio_path, face_npy = None, None, None, None
+                    if hasattr(dataset_cls, '_get_video_path'): video_path = dataset_cls._get_video_path(sample)
+                    if hasattr(dataset_cls, '_get_audio_path'): audio_path = dataset_cls._get_audio_path(sample) 
+                    if hasattr(dataset_cls, '_get_face_path'):  face_npy   = dataset_cls._get_face_path(sample)
+                    if hasattr(dataset_cls, '_get_image_path'): image_path = dataset_cls._get_image_path(sample)
+                    sample_data = dataset_cls.read_frame_face_audio_text(video_path, face_npy, audio_path, image_path) # 读取数据
+                    if len(samples) == 0:
+                        for key in sample_data.keys():
+                            samples[key] = []
+                    for key in sample_data.keys():
+                        samples[key].append(sample_data[key])
+                for key in ['audio', 'raw_audio', 'face', 'raw_face', 'image', 'raw_image', 'frame', 'raw_frame']:
+                    if samples[key][0] is None: 
+                        samples[key] = None
+                    else:
+                        samples[key] = torch.stack(samples[key], dim=0)
                 # => img_list
                 audio_llms, frame_llms, face_llms, image_llms, multi_llms = None, None, None, None, None
-                audio_hiddens, audio_llms = chat.postprocess_audio(sample_data)  
-                frame_hiddens, frame_llms = chat.postprocess_frame(sample_data)
-                face_hiddens,  face_llms  = chat.postprocess_face(sample_data)
-                _,             image_llms = chat.postprocess_image(sample_data)
+                audio_hiddens, audio_llms = chat.postprocess_audio(samples)  
+                frame_hiddens, frame_llms = chat.postprocess_frame(samples)
+                face_hiddens,  face_llms  = chat.postprocess_face(samples)
+                _,             image_llms = chat.postprocess_image(samples)
                 if face_or_frame.startswith('multiface'):
                     _, multi_llms = chat.postprocess_multi(face_hiddens, audio_hiddens)
                 elif face_or_frame.startswith('multiframe'):
                     _, multi_llms = chat.postprocess_multi(frame_hiddens, audio_hiddens)
 
-                img_list = {}
-                img_list['audio'] = audio_llms
-                img_list['frame'] = frame_llms
-                img_list['face']  = face_llms
-                img_list['image'] = image_llms
-                img_list['multi'] = multi_llms
-
+                img_list = {"audio": audio_llms, "frame": frame_llms, "face": face_llms, "image": image_llms, "multi": multi_llms}
                 # get prompt (if use zeroshot => ov labels; else => dataset specific question)
-                user_message = get_user_message(dataset_cls, args.zeroshot, args.outside_user_message)
-                prompt = dataset_cls.get_prompt_for_multimodal(face_or_frame, subtitle, user_message)
+                user_messages = [get_user_message(dataset_cls, args.zeroshot, args.outside_user_message)] * len(name_batch)
+                prompts = [dataset_cls.get_prompt_for_multimodal(face_or_frame, subtitle, user_message) for user_message, subtitle in zip(user_messages, subtitle_batch)]
                 
                 # => call function
-                response = chat.answer_sample(tmp_prompt=prompt, img_list=img_list,
-                                            num_beams=1, temperature=1, do_sample=True, top_p=0.9, 
+                response = chat.answer_sample(tmp_prompt=prompts, img_list=img_list,
+                                            num_beams=1, temperature=0.6, do_sample=True, top_p=0.9, 
                                             max_new_tokens=1200, max_length=2000) # llama: max_token_num=2048
-                name2reason[name] = response
-                print (response)
-                # break
+                for name, resp in zip(name_batch, response):
+                    name2reason[name] = resp
+                    print (resp)
                 # if ii == 0: break # for debug
+                # break
             break
             print ('save results')
             np.savez_compressed(save_path, name2reason=name2reason)
         break
-    

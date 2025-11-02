@@ -5,7 +5,7 @@ import os
 AFFECTGPT_ROOT = './'
 EMOTION_WHEEL_ROOT = './emotion_wheel'
 RESULT_ROOT = os.path.join(AFFECTGPT_ROOT, 'output/results')
-
+USER_MESSAGES = None # 用的问题和答案
 
 #######################
 ## 所有模型的存储路径
@@ -60,9 +60,9 @@ PATH_TO_RAW_VIDEO = {
     'MERCaptionPlus':  os.path.join(DATA_DIR['MERCaptionPlus'], 'video'),
     'OVMERD':  os.path.join(DATA_DIR['OVMERD'], 'video'),
     'MER2023': os.path.join(DATA_DIR['MER2023'], 'video'),
-    'IEMOCAPFour': os.path.join(DATA_DIR['IEMOCAPFour'], 'subvideo-tgt'),
+    'IEMOCAPFour': os.path.join(DATA_DIR['IEMOCAPFour'], 'subvideo'),
     'CMUMOSI': os.path.join(DATA_DIR['CMUMOSI'], 'subvideo'),
-    'CMUMOSEI': os.path.join(DATA_DIR['CMUMOSEI'], 'subvideo_new'),
+    'CMUMOSEI': os.path.join(DATA_DIR['CMUMOSEI'], 'subvideo'),
     'SIMS': os.path.join(DATA_DIR['SIMS'], 'video'),
     'MELD': os.path.join(DATA_DIR['MELD'], 'subvideo'),
     'SIMSv2': os.path.join(DATA_DIR['SIMSv2'], 'video_new'),

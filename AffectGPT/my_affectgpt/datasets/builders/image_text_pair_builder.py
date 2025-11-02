@@ -206,7 +206,7 @@ class MERCaptionPlus_Builder(BaseDatasetBuilder):
 
     def build_datasets(self):
         logging.info("Building datasets MERCaptionPlus_Dataset")
-        self.build_processors()
+        self.build_processors() # 
 
         datasets = dict()
         dataset_cls = self.train_dataset_cls

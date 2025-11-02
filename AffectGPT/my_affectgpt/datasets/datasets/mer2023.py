@@ -39,10 +39,15 @@ class MER2023_Dataset(BaseDataset):
             self.needed_data = self.get_needed_data(self.face_or_frame)
             print (self.needed_data) # ['audio', 'frame', 'face']
         
+        self.user_messages = config.USER_MESSAGES
+        self.train_mode = True
+        if self.user_messages is not None:
+            self.train_mode = False
+            
         ################# 直接手动指定所有信息的存储路径 #################
         ## read train/test splits
         label_path   = config.PATH_TO_LABEL[self.dataset]
-        train_corpus = np.load(label_path, allow_pickle=True)['train_corpus'].tolist()
+        train_corpus = np.load(label_path, allow_pickle=True)['train_corpus' if self.train_mode else 'test1_corpus'].tolist()
         train_names  = [name                      for name in train_corpus]
         train_emos   = [train_corpus[name]['emo'] for name in train_corpus]
         self.train_names = train_names

@@ -35,9 +35,14 @@ class OVMERD_Dataset(BaseDataset):
             print (f'Read data type: ######{self.face_or_frame}######')
             self.needed_data = self.get_needed_data(self.face_or_frame)
             print (self.needed_data) # ['audio', 'frame', 'face']
-        
+
+        self.user_messages = config.USER_MESSAGES
+        self.train_mode = True
+        if self.user_messages is not None:
+            self.train_mode = False
+            
         ################# 直接手动指定所有信息的存储路径 #################
-        ov_path = os.path.join(config.DATA_DIR[self.dataset], 'track2_train_ovmerd.csv')
+        ov_path = config.PATH_TO_TRANSCRIPTIONS[self.dataset]
         name2openset = {}
         df = pd.read_csv(ov_path)
         for _, row in df.iterrows():

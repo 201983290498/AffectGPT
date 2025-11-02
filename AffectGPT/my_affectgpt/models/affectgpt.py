@@ -11,25 +11,44 @@ from my_affectgpt.models.Qformer import BertConfig, BertLMHeadModel
 from my_affectgpt.models.tokenizer import load_tokenizer_from_LLM
 from my_affectgpt.models.encoder import * # 只有调用了，才能实现 registry 过程
 import config
+from transformers import StoppingCriteriaList, StoppingCriteria
 
 
-@registry.register_model("affectgpt")
+class StoppingCriteriaSub(StoppingCriteria):
+    def __init__(self, stops=[], encounters=1):
+        super().__init__()
+        self.stops = stops
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor):
+        for stop in self.stops:
+            if torch.all((stop == input_ids[0][-len(stop):])).item():
+                return True
+        return False
+
+
+'''
+Q-Former（Query-Former）是一种基于查询（Query）机制的 Transformer 结构，
+主要用于从高维视觉特征中提取关键信息，并将其压缩为固定数量的 
+“查询 token”（query tokens），以便与语言模型（LLM）融合.
+'''
+
+@registry.register_model("affectgpt")  # 将类注册为 "affectgpt"，便于后续通过注册中心调用
 class AffectGPT(Blip2Base):
 
     PRETRAINED_MODEL_CONFIG_DICT = {
-        "pretrain_vicuna": "configs/models/affectgpt.yaml",
+        "pretrain_vicuna": "configs/models/affectgpt.yaml",  # 预训练配置文件路径，用于加载模型参数
     }
 
-    @classmethod
-    def init_video_Qformer(cls, num_query_token, vision_width, num_hidden_layers=2):
+    @classmethod  
+    def init_video_Qformer(cls, num_query_token, vision_width, num_hidden_layers=2):  # Q-Former 初始化
         encoder_config = BertConfig.from_pretrained("models/bert-base-uncased")
-        encoder_config.num_hidden_layers = num_hidden_layers
-        encoder_config.encoder_width = vision_width
+        encoder_config.num_hidden_layers = num_hidden_layers   # Q-Former层数
+        encoder_config.encoder_width = vision_width   # 与视觉/音频编码器输出维度匹配
         # insert cross-attention layer every other block
-        encoder_config.add_cross_attention = True
-        encoder_config.cross_attention_freq = 1
-        encoder_config.query_length = num_query_token
-        Qformer = BertLMHeadModel(config=encoder_config)
+        encoder_config.add_cross_attention = True   # 启用交叉注意力（用于融合查询与视觉/音频特征）
+        encoder_config.cross_attention_freq = 1    # 每一层都使用交叉注意力
+        encoder_config.query_length = num_query_token     # 查询令牌数量
+        Qformer = BertLMHeadModel(config=encoder_config)    # 基于BERT的Q-Former
         query_tokens = nn.Parameter(
             torch.zeros(1, num_query_token, encoder_config.hidden_size)
         )
@@ -57,6 +76,7 @@ class AffectGPT(Blip2Base):
         video_fusion_type,
         audio_fusion_type,
         image_fusion_type,
+        train_mode=True,
     ):
         super().__init__()
 
@@ -71,7 +91,8 @@ class AffectGPT(Blip2Base):
             <AudioHere>: 32001
         '''
         self.llama_model_name = llama_model_name    
-        self.llama_tokenizer = load_tokenizer_from_LLM(llama_model_name)
+        self.llama_tokenizer = load_tokenizer_from_LLM(llama_model_name) # 对tokenizer进行后处理
+        # 获取特殊令牌ID（用于在文本中插入多模态特征标记，如<ImageHere>）
         DEFAULT_IMAGE_PATCH_TOKEN = config.DEFAULT_IMAGE_PATCH_TOKEN
         DEFAULT_AUDIO_PATCH_TOKEN = config.DEFAULT_AUDIO_PATCH_TOKEN
         DEFAULT_FRAME_PATCH_TOKEN = config.DEFAULT_FRAME_PATCH_TOKEN
@@ -82,7 +103,7 @@ class AffectGPT(Blip2Base):
         self.FRAME_PATCH_TOKEN_ID = self.llama_tokenizer.get_vocab()[DEFAULT_FRAME_PATCH_TOKEN]
         self.FACE_PATCH_TOKEN_ID  = self.llama_tokenizer.get_vocab()[DEFAULT_FACE_PATCH_TOKEN]
         self.MULTI_PATCH_TOKEN_ID = self.llama_tokenizer.get_vocab()[DEFAULT_MULTI_PATCH_TOKEN]
-
+        # 加载LLM模型
         if llama_model_name in ['Baichuan2']:
             self.llama_model = AutoModelForCausalLM.from_pretrained(
                 config.PATH_TO_LLM[llama_model_name],
@@ -94,7 +115,7 @@ class AffectGPT(Blip2Base):
                 config.PATH_TO_LLM[llama_model_name],
                 torch_dtype=torch.float16
             )
-
+        # LoRA 微调配置
         for name, param in self.llama_model.named_parameters():
             param.requires_grad = False
 
@@ -106,7 +127,7 @@ class AffectGPT(Blip2Base):
         for param in self.llama_model.parameters():
             param.requires_grad = False
         
-        # LoRA 部分参数是可调节的
+        # LoRA 部分参数是可调节的   # 配置LoRA目标层（注意力和MLP层）
         layer_num = len(self.llama_model.model.layers)
         target_modules=['model.layers.'+str(i)+'.'+ k for i in range(layer_num) for k in ["self_attn.q_proj", "self_attn.k_proj", 
                                                                                         "self_attn.v_proj", "self_attn.o_proj", 
@@ -130,17 +151,20 @@ class AffectGPT(Blip2Base):
         print('====== Loading Image Encoder ======')
         self.image_fusion_type = image_fusion_type
         self.num_image_query_token = num_image_query_token
+        # 图像编码器与投影层
         self.visual_encoder = registry.get_visual_encoder_class(visual_encoder_name)()
         self.image_llama_proj = nn.Linear(self.visual_encoder.hidden_size, 
-                                        self.llama_model.config.hidden_size)
+                                        self.llama_model.config.hidden_size)   # 将图像特征投影到LLM维度
         
         print('====== Loading Video Q-Former ======')
         self.video_fusion_type = video_fusion_type
         self.num_video_query_token = num_video_query_token
 
-        ## case1: qformer
+        ## case1: qformer   视频特征处理
         if self.video_fusion_type == 'qformer':
+            # 视频帧位置嵌入（区分不同帧的时序信息）
             self.video_frame_position_embedding = nn.Embedding(32, self.visual_encoder.hidden_size) # [32, featdim]
+            # 初始化视频Q-Former和查询令牌
             self.video_Qformer, self.video_query_tokens = self.init_video_Qformer(num_query_token=num_video_query_token,
                                                                                 vision_width=self.visual_encoder.hidden_size, 
                                                                                 num_hidden_layers=2)
@@ -150,7 +174,7 @@ class AffectGPT(Blip2Base):
             for layer in self.video_Qformer.bert.encoder.layer:
                 layer.output = None
                 layer.intermediate = None
-
+            # 冻结Q-Former参数（可选）
             if frozen_video_Qformer:
                 for name, param in self.video_Qformer.named_parameters():
                     param.requires_grad = False
@@ -165,17 +189,17 @@ class AffectGPT(Blip2Base):
                     param.requires_grad = True
                 self.video_query_tokens.requires_grad = True
                 print('trainable: video_Qformer')
-            video_hidden_size = self.video_Qformer.config.hidden_size
+            video_hidden_size = self.video_Qformer.config.hidden_size     # Q-Former输出维度
         ## case2: mean
-        elif self.video_fusion_type == 'mean':
+        elif self.video_fusion_type == 'mean':  # 均值融合：直接对视频帧特征取均值
             video_hidden_size = self.visual_encoder.hidden_size
         ## case3: attention
-        elif self.video_fusion_type == 'attention':
+        elif self.video_fusion_type == 'attention':   # 注意力融合：通过MLP学习帧权重
             self.video_attention_mlp = nn.Linear(self.visual_encoder.hidden_size, 1)
             video_hidden_size = self.visual_encoder.hidden_size
 
 
-        print(f'====== Loading Video LLAMA proj ======')
+        print(f'====== Loading Video LLAMA proj ======')   # 视频特征到LLM的投影层
         self.affectgpt_proj = nn.Linear(video_hidden_size, self.llama_model.config.hidden_size)
         if frozen_video_proj:
             for name, param in self.affectgpt_proj.named_parameters():
@@ -292,9 +316,27 @@ class AffectGPT(Blip2Base):
             for name, param in self.multi_llama_proj.named_parameters():
                 param.requires_grad = True
             print('trainable: Multi Q-Former LLaMA proj')
+            
+        self.train_mode = train_mode
+        self.stopping_criteria = None # 推理的时候使用的结束规则
 
-        
     # ===================================================== #
+    # ===================================================== #
+    # 为推理结束的时候加载停用词  用于判断生成文本何时终止，避免模型无限制生成内容
+    def get_stop_words(self):
+        if self.stopping_criteria is not None:
+            return self.stopping_criteria
+        id_tre_jin = self.llama_tokenizer('###', add_special_tokens=False)['input_ids'][0] # 835
+        id_two_jin = self.llama_tokenizer('a##', add_special_tokens=False)['input_ids'][1] # 2277
+        id_one_jin = self.llama_tokenizer('a#', add_special_tokens=False)['input_ids'][1]  # 29937
+        stop_words_ids = [torch.tensor([self.llama_tokenizer.eos_token_id]).to(self.device),
+                          torch.tensor([id_tre_jin]).to(self.device),
+                          torch.tensor([id_two_jin, id_one_jin]).to(self.device),
+                          torch.tensor([id_one_jin, id_two_jin]).to(self.device)] # three id for "### / # ## "
+        self.stopping_criteria = StoppingCriteriaList([StoppingCriteriaSub(stops=stop_words_ids)])
+        return self.stopping_criteria
+    
+    # ===============将图像数据转换为适合大语言模型（LLM）输入的特征表示，支持不同的图像特征融合策略=================== #
     # ===================================================== #
     # 为 EVA_CLIP 保留每个图片的 32 tokens
     # 其他 visual encoder 默认是 1 tokens
@@ -303,11 +345,11 @@ class AffectGPT(Blip2Base):
         with self.maybe_autocast():
 
             # VIT: w/ Q-Former or w/o Q-Former: [b c t h w] -> [b, t, q=32, h=768]
-            frame_hidden_state = self.visual_encoder(image, raw_image).to(device)
-            batch_size, time_length = frame_hidden_state.size()[:2]
+            frame_hidden_state = self.visual_encoder(image, raw_image).to(device)  # 通过视觉编码器处理图像
+            batch_size, time_length = frame_hidden_state.size()[:2]    # 提取批次大小和时间/帧维度
             
             ## + Position Embedding [支持两种类型输入格式]
-            # case1: 输入维度为 [b, t, 32, 768]
+            # case1: 输入维度为 [b, t, 32, 768]   处理不同形状的视觉特征（适应带/不带Q-Former的编码器输出）
             if len(frame_hidden_state.size()) == 4:
                 frame_hidden_state = einops.rearrange(frame_hidden_state, 'b t q h -> b (t q) h', b=batch_size, t=time_length) # [b, (t, 32), 768]
             # case2: 输入维度为 [b, t, 768]
@@ -389,9 +431,9 @@ class AffectGPT(Blip2Base):
                 frame_hidden_state = frame_hidden_state + frame_position_embeddings # [b, t, 768]
 
             # + Video Q-Former: => 时间维度压缩到 32 tokens => [b, (t, 32), 768] 压缩到 [b, 32, 768]
-            frame_atts = torch.ones(frame_hidden_state.size()[:-1], dtype=torch.long).to(device)
-            video_query_tokens = self.video_query_tokens.expand(frame_hidden_state.shape[0], -1, -1)
-            video_query_output = self.video_Qformer.bert(
+            frame_atts = torch.ones(frame_hidden_state.size()[:-1], dtype=torch.long).to(device)  # 生成注意力掩码（全1，表示所有位置有效）
+            video_query_tokens = self.video_query_tokens.expand(frame_hidden_state.shape[0], -1, -1)  # 扩展查询tokens
+            video_query_output = self.video_Qformer.bert(  # Q-Former的BERT层：用查询tokens与视频特征交互，输出压缩后的特征
                 query_embeds=video_query_tokens,
                 encoder_hidden_states=frame_hidden_state,
                 encoder_attention_mask=frame_atts,
@@ -404,7 +446,7 @@ class AffectGPT(Blip2Base):
 
         return store_hidden_state, inputs_llama
     
-    # 将视频的时间维度压缩到 1 tokens
+    # 将视频的时间维度压缩到 1 tokens  保留全局信息（丢弃细粒度时序细节）
     def encode_video_mean(self, video, raw_video):
         device = video.device
         with self.maybe_autocast():
@@ -438,7 +480,7 @@ class AffectGPT(Blip2Base):
 
         return store_hidden_state, inputs_llama
     
-    # 将视频的时间维度压缩到 1 tokens
+    # 将视频的时间维度压缩到 1 tokens   通过注意力加权融合将视频的时间维度压缩为 1 个 token，动态关注重要时间帧
     def encode_video_attention(self, video, raw_video):
         device = video.device
         with self.maybe_autocast():
@@ -646,15 +688,7 @@ class AffectGPT(Blip2Base):
             multi_hiddens, multi_llms = self.encode_multi_attention(video_hidden_state, audio_hidden_state)
         return multi_hiddens, multi_llms
 
-    '''
-    inference prompt:
-    <s>###Human: Close your eyes, open your ears and you imagine only based on the sound that <Audio><AudioHere></Audio>. \
-    Close your ears, open your eyes and you see that <Video><ImageHere></Video>.  \
-    The subtitle of this video is <Subtitle>{subtitle}</Subtitle>. \
-    Now answer my question based on what you have seen, heard, and subtitles. {user_message} ###Assistant:
-    '''
-    def forward(self, samples):
-
+    def preprocess_multi_modal_inputs(self, samples):
         self.face_or_frame = samples['face_or_frame'] # 把这个参数传出来
         frame_llms, face_llms, audio_llms, image_llms, multi_llms = None, None, None, None, None
         if 'frames' in samples: 
@@ -672,7 +706,7 @@ class AffectGPT(Blip2Base):
             if self.face_or_frame.startswith('multiframe'):
                 multi_hiddens, multi_llms = self.encode_multi_merge(frame_hiddens, audio_hiddens)
 
-        # temp_input_ids: <ImageHere> -> [0]   
+        # temp_input_ids: <ImageHere> -> [0], 替换token   处理文本嵌入，替换模态标记
         input_ids = samples['input_ids']
         temp_input_ids = copy.deepcopy(input_ids)
         temp_input_ids[temp_input_ids == self.FRAME_PATCH_TOKEN_ID] = 0
@@ -682,7 +716,7 @@ class AffectGPT(Blip2Base):
         temp_input_ids[temp_input_ids == self.IMAGE_PATCH_TOKEN_ID] = 0
         temp_input_embedding = self.llama_model.model.model.embed_tokens(temp_input_ids) # 嵌套 LoRA 之后，会在 model 外面再包一层
 
-        ## replace <ImageHere>; <MultiHere>; <FrameHere>; <FaceHere>; <AudioHere>
+        ## replace <ImageHere>; <MultiHere>; <FrameHere>; <FaceHere>; <AudioHere>  替换模态标记为特征嵌入
         cur_idx = 0
         new_input_embeds = []
         for cur_input_ids, cur_input_embeds in zip(input_ids, temp_input_embedding):
@@ -708,6 +742,16 @@ class AffectGPT(Blip2Base):
             new_input_embeds.append(cur_input_embeds)
             cur_idx += 1
         inputs_embeds = torch.stack(new_input_embeds, dim=0)
+        return inputs_embeds
+    '''
+    inference prompt:
+    <s>###Human: Close your eyes, open your ears and you imagine only based on the sound that <Audio><AudioHere></Audio>. \
+    Close your ears, open your eyes and you see that <Video><ImageHere></Video>.  \
+    The subtitle of this video is <Subtitle>{subtitle}</Subtitle>. \
+    Now answer my question based on what you have seen, heard, and subtitles. {user_message} ###Assistant:
+    '''
+    def forward(self, samples):
+        inputs_embeds = self.preprocess_multi_modal_inputs(samples) # 将输入拼接到一起。包括了特征预先融合、投影等过程，然后将input_ids转化成embedding，替换掉其中特殊token的embedding
 
         '''
         Notation：比如 ChatGLM 这种模型是不支持 inputs_embeds 输入的，所以无法采用这种方式去计算loss
@@ -719,7 +763,7 @@ class AffectGPT(Blip2Base):
         '''
         targets = samples['labels']
         attention_mask = samples['attention_masks']
-        with self.maybe_autocast():
+        with self.maybe_autocast():  # 输入 LLM 计算训练损失
             outputs = self.llama_model(
                 inputs_embeds=inputs_embeds,
                 attention_mask=attention_mask,
@@ -728,6 +772,25 @@ class AffectGPT(Blip2Base):
         loss = outputs.loss
         return {"loss": loss}
 
+    # 根据多模态输入生成符合任务要求的文本
+    def generate(self, samples, num_beams=1, temperature=1.0, do_sample=True,  top_p=0.9, max_new_tokens=1000, min_length=1, max_length=2000, repetition_penalty=1.0, length_penalty=1.0):
+        self.llama_model.eval()
+        with torch.no_grad():
+            inputs_embeds = self.preprocess_multi_modal_inputs(samples)
+            attention_mask = samples['attention_masks']
+            generated_ids = self.llama_model.generate(
+                inputs_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+                max_new_tokens=max_new_tokens,
+                stopping_criteria=self.get_stop_words(),
+                num_beams=num_beams,
+                do_sample=do_sample,
+                min_length=min_length,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty,
+                length_penalty=length_penalty,
+                temperature=temperature)
+        return generated_ids
 
     @classmethod
     def from_config(cls, cfg):

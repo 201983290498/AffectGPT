@@ -13,6 +13,36 @@ AffectGPT</a></h3>
 [![License](https://img.shields.io/badge/License-Apache%202.0-yellow)](AffectGPT/LICENSE)
 </h5>
 
+## 🎯 What Can AffectGPT Do?
+
+AffectGPT is a powerful multimodal large language model (MLLM) designed for comprehensive emotion understanding. Here's what it can do:
+
+### Core Capabilities
+- **🎭 Open-Vocabulary Emotion Recognition**: Predict any number and category of emotions, breaking free from fixed emotion taxonomies used in traditional systems.
+- **🎬 Multimodal Analysis**: Process and analyze emotions from multiple sources simultaneously:
+  - Video frames (visual expressions, body language)
+  - Audio signals (voice tone, prosody, acoustic features)
+  - Text transcripts (spoken content, linguistic cues)
+  - Facial features (detailed facial expressions)
+
+### Key Features
+- **📊 Emotion Label Prediction**: Generate emotion labels from an open vocabulary of 236+ emotion categories
+- **💬 Emotion Description**: Provide detailed natural language descriptions and reasoning about emotional states
+- **🔄 Flexible Input**: Work with different input modalities (audio-only, video-only, or multimodal)
+- **🌐 Multilingual Support**: Handle both Chinese and English content
+
+### Use Cases
+- Analyze emotional states in video conversations and interviews
+- Understand complex emotional dynamics in social interactions
+- Provide explainable emotion recognition with detailed reasoning
+- Support emotion AI research with comprehensive benchmarking tools
+
+### Technical Highlights
+- Built on state-of-the-art foundation models (Qwen2.5-7B-Instruct LLM)
+- Trained on large-scale datasets (132,171+ samples)
+- Achieves top performance on MER-UniBench across 9 datasets
+- Supports both zero-shot inference and fine-tuned models
+
 ## ✨ OV-MER Task
 
 **OV-MER** transitions from *traditional MER* to a framework that enables the prediction of *any number and category of emotions*, thereby advancing emotion AI toward real-world applicability by capturing the full spectrum of human emotions.

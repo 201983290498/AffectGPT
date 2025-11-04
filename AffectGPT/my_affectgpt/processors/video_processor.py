@@ -30,10 +30,10 @@ def load_video(video_path, n_frms=MAX_INT, height=-1, width=-1, sampling="unifor
     decord.bridge.set_bridge("torch")
     vr = VideoReader(uri=video_path, height=height, width=width)
 
-    vlen = len(vr)
+    vlen = len(vr)  # 获取视频总帧数
     start, end = 0, vlen
 
-    n_frms_update = min(n_frms, vlen) # for vlen < n_frms, only read vlen
+    n_frms_update = min(n_frms, vlen) # for vlen < n_frms, only read vlen  实际采样帧数
 
     if sampling == "uniform": # 均匀采样
         indices = np.arange(start, end, vlen / n_frms_update).astype(int).tolist()
@@ -45,9 +45,9 @@ def load_video(video_path, n_frms=MAX_INT, height=-1, width=-1, sampling="unifor
         raise NotImplementedError
 
     #########################################
-    ## for vlen < n_frms, pad into n_frms
+    ## for vlen < n_frms, pad into n_frms  填充不足帧数
     while len(indices) < n_frms:
-        indices.append(indices[-1])
+        indices.append(indices[-1])  # 用最后一帧的索引填充，确保输出帧数固定为n_frms
     #########################################
 
     # get_batch -> T, H, W, C

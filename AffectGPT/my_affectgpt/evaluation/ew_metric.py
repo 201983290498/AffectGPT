@@ -27,15 +27,17 @@ def func_read_batch_calling_model(modelname):
     sampling_params = SamplingParams(temperature=0.7, top_p=0.8, repetition_penalty=1.05, max_tokens=512)
     return llm, tokenizer, sampling_params
 
-## reason -> ov labels
+## reason -> ov labels(从答案中抽取情绪)
 def extract_openset_batchcalling(reason_root=None, reason_npz=None, update_npz=None, reason_csv=None, name2reason=None,
                                  store_root=None, store_npz=None, 
-                                 modelname=None, llm=None, tokenizer=None, sampling_params=None):
+                                 modelname=None, llm=None, tokenizer=None, sampling_params=None, batch_size=64):
     
     ## load model
-    if (llm is None) and (tokenizer is None) and (sampling_params is None):
+    if (llm is None) or (tokenizer is None) or (sampling_params is None):
+        if modelname is None:
+            raise ValueError("modelname must be provided when llm, tokenizer, or sampling_params is None")
         model_path = config.PATH_TO_LLM[modelname]
-        llm = LLM(model=model_path)
+        llm = LLM(model=model_path, compilation_config=0, gpu_memory_utilization=0.6)
         tokenizer = AutoTokenizer.from_pretrained(model_path)
         sampling_params = SamplingParams(temperature=0.7, top_p=0.8, repetition_penalty=1.05, max_tokens=512)
    
@@ -59,7 +61,7 @@ def extract_openset_batchcalling(reason_root=None, reason_npz=None, update_npz=N
 
     ## main process
     whole_names, whole_responses = list(name2reason.keys()), []
-    batches_names = split_list_into_batch(whole_names, batchsize=8)
+    batches_names = split_list_into_batch(whole_names, batchsize=batch_size)
     for batch_names in batches_names:
         batch_reasons = [name2reason[name] for name in batch_names]
         batch_responses = reason_to_openset_qwen(llm=llm, tokenizer=tokenizer,
@@ -83,15 +85,17 @@ def extract_openset_batchcalling(reason_root=None, reason_npz=None, update_npz=N
         return whole_names, whole_responses
 
 
-## ov labels -> sentiment
+## ov labels -> sentiment(从情绪中抽取出正负向。)
 def openset_to_sentiment_batchcalling(openset_npz=None, name2openset=None, 
                                       store_npz=None,
-                                      modelname=None, llm=None, tokenizer=None, sampling_params=None):
+                                      modelname=None, llm=None, tokenizer=None, sampling_params=None, batch_size=64):
     
     ## load model
-    if (llm is None) and (tokenizer is None) and (sampling_params is None):
+    if (llm is None) or (tokenizer is None) or (sampling_params is None):
+        if modelname is None:
+            raise ValueError("modelname must be provided when llm, tokenizer, or sampling_params is None")
         model_path = config.PATH_TO_LLM[modelname]
-        llm = LLM(model=model_path)
+        llm = LLM(model=model_path, compilation_config=0, gpu_memory_utilization=0.6)
         tokenizer = AutoTokenizer.from_pretrained(model_path)
         sampling_params = SamplingParams(temperature=0.7, top_p=0.8, repetition_penalty=1.05, max_tokens=512)
    
@@ -105,7 +109,7 @@ def openset_to_sentiment_batchcalling(openset_npz=None, name2openset=None,
 
     ## main process
     whole_names, whole_responses = list(name2openset.keys()), []
-    batches_names = split_list_into_batch(whole_names, batchsize=8)
+    batches_names = split_list_into_batch(whole_names, batchsize=batch_size)
     for batch_names in batches_names:
         batch_reasons = [name2openset[name] for name in batch_names]
         batch_responses = openset_to_sentiment_qwen(llm=llm, tokenizer=tokenizer, sampling_params=sampling_params, 
@@ -176,7 +180,7 @@ def wheel_metric_calculation(gt_root=None, gt_csv=None, name2gt=None,
 
 def hitrate_metric_calculation(name2gt=None, openset_root=None, openset_npz=None, name2pred=None, inter_print=True):
 
-    # 已 M-avg 为主指标 [全部映射到 level1 的 label]
+    # 已 M-avg 为主指标 [全部映射到 level1 的 label]，因为情绪转换理论包括了5种。
     candidate_metrics = [
                         'case3_wheel1_level1',
                         'case3_wheel2_level1',

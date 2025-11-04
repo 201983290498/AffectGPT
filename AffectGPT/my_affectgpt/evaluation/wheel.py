@@ -13,7 +13,7 @@ import config
 #############################################
 ###### 从所有 emotion wheel 中读取情感词 ######
 #############################################
-# read xlsx and convert it into map format
+# 读取xlsx文件，获取情感词的层次映射。将xls转换成词典。
 def read_wheel_to_map(xlsx_path):
     store_map = {}
     level1, level2, level3 = "", "", ""
@@ -24,7 +24,7 @@ def read_wheel_to_map(xlsx_path):
         row_level2 = row['level2']
         row_level3 = row['level3']
 
-        # update level1, level2, level3
+        # 更新 level1, level2, level3
         if not pd.isna(row_level1):
            level1 = row_level1
         if not pd.isna(row_level2):
@@ -86,10 +86,10 @@ def func_merge_map(map1, map2):
 # label2wheel: 实现所有标签 -> emotion wheel 中的标签
 def read_candidate_synonym_onerun(runname='run1'):
 
-    ## read candidate labels
+    ## 获取所有xlsx文件中的情感词
     wheel_labels = convert_all_wheels_to_candidate_labels()
 
-    ## gain mapping
+    ## 获取mapping
     label2wheel = {}
     synonym_path = os.path.join(config.EMOTION_WHEEL_ROOT, 'synonym.xlsx')
     df = pd.read_excel(synonym_path)
@@ -99,8 +99,8 @@ def read_candidate_synonym_onerun(runname='run1'):
         raw = row[f'word_{runname}'].strip().lower()
         assert raw in wheel_labels, f'error in {raw}' # check openai returns
         if raw not in label2wheel:
-            label2wheel[raw] = []
-        label2wheel[raw].append(raw)
+            label2wheel[raw] = set()
+        label2wheel[raw].add(raw)
 
         # 建立 synonyms -> raw 映射
         synonyms = row[f'synonym_{runname}']
@@ -108,8 +108,10 @@ def read_candidate_synonym_onerun(runname='run1'):
         for synonym in synonyms:
             synonym = synonym.strip().lower()
             if synonym not in label2wheel: 
-                label2wheel[synonym] = []
-            label2wheel[synonym].append(raw)
+                label2wheel[synonym] = set()
+            label2wheel[synonym].add(raw)
+    for item in label2wheel.keys():
+        label2wheel[item] = list(label2wheel[item])
     return label2wheel
 
 
@@ -218,15 +220,17 @@ def read_format2raws():
         format = string_to_list(format)
         for format_item in format:
             if format_item not in format2raws:
-                format2raws[format_item] = []
-            format2raws[format_item].append(raw)
+                format2raws[format_item] = set()
+            format2raws[format_item].add(raw)
         
         # 2. 建立 raw 与 raw 之间的映射
         if raw not in format2raws:
-            format2raws[raw] = []
-        format2raws[raw].append(raw)
+            format2raws[raw] = set()
+        format2raws[raw].add(raw)
+    for format in format2raws:
+        format2raws[format] = list(format2raws[format])
     print (len(format2raws))
-    return format2raws
+    return format2raws # 从 format 到 raw 的映射
 '''
 ## 利用格式扩增，将 1255 个单词扩充到 7386 个单词
 => 采用上述两步操作，将 255 个单词，扩充到了 7386 个单词，增加了近40倍
@@ -308,7 +312,7 @@ def func_get_name2reason(reason_root):
     return name2reason
 
 
-# case1: 计算只依赖于 format_mapping 下的结果
+# case1: 计算只依赖于 format_mapping 下的结果。就是将不同形式的单词返回的情感词根。
 def func_backward_case1(label, format_mapping, raw_mapping=None, wheel_map=None):
     if label not in format_mapping:
         return ""
@@ -320,7 +324,7 @@ def func_backward_case1(label, format_mapping, raw_mapping=None, wheel_map=None)
     return stage1_unique
 
 
-# case2: 核心是保证 backward 过程中的唯一性
+# case2: 核心是保证 backward 过程中的唯一性。进一步将同义情感词返回到 基础的情绪。
 def func_backward_case2(label, format_mapping, raw_mapping, wheel_map=None):
     if label not in format_mapping:
         return ""
@@ -366,17 +370,18 @@ def func_get_wheel_cluster(wheel='wheel1', level='level1'):
 # func_get_wheel_cluster(wheel='wheel4', level='level2')
 # func_get_wheel_cluster(wheel='wheel5', level='level2')
 
-## 函数3：引入 emotion wheel 进行评价
+## 函数3：引入 emotion wheel 进行评价。进一步将基础的情绪通过情感轮盘映射到基础的情绪。
 def func_backward_case3(label, format_mapping, raw_mapping, wheel_map):
     if label not in format_mapping:
         return ""
     
     level1_whole = []
-    for format in format_mapping[label]:
+    for format in format_mapping[label]: 
         for raw in raw_mapping[format]:
             level1_whole.append(raw)
-    
-    for level1 in sorted(level1_whole): # 保证了结果唯一性
+            
+    # assert len(set([wheel_map[item] for item in level1_whole if item in wheel_map])) <= 1, "标签映射结果不唯一。"
+    for level1 in sorted(level1_whole): # 保证了结果唯一性,z
         if level1 in wheel_map:
             return wheel_map[level1]
     return ""
@@ -521,17 +526,17 @@ def wheel_metric_calculation(gt_root=None, gt_csv=None, name2gt=None,
 
 
 
-## 这里我希望定义一个专属于 openset & onehot 问题的评价指标，用于后续结果分析
-def calculate_openset_onehot_hitrate(name2gt=None, 
+## 这里我希望定义一个专属于 openset & onehot 问题的评价指标，用于后续结果分析, 主要看命中率和召回率。
+def calculate_openset_onehot_hitrate(name2gt=None, # 根据name获取到ground truth
                                      openset_root=None, openset_npz=None, name2pred=None, 
                                      metric='case1', format_mapping=None, raw_mapping=None,
                                      inter_print=True):
 
-    # read name2gt
+    # 读取所有的 gt labels
     candidata_labels = list(set([name2gt[name] for name in name2gt]))
-    if inter_print: print (f'candidata_labels: {candidata_labels}')
-    
-    # read name2pred
+    if inter_print: print (f'candidata_labels: {candidata_labels}', metric)
+
+    # read name2pred 获取测试的结果
     if name2pred is None:
         if openset_root is not None:
             name2pred = func_get_name2reason(openset_root)
@@ -553,33 +558,36 @@ def calculate_openset_onehot_hitrate(name2gt=None,
     else:
         wheel_map = None
 
+    # candidata_labels 处理
+    candidates = func_map_label_to_synonym(candidata_labels, format_mapping, raw_mapping, wheel_map, metric)
+
     # score calculation
     hitrates, mscores = [], []
     for name in name2gt:
        
-        # (gt) process
+        # ground_truth 处理
         gt = string_to_list(name2gt[name])
         gt = [item.lower().strip() for item in gt]
         gt = list(set(func_map_label_to_synonym(gt, format_mapping, raw_mapping, wheel_map, metric)))
         if len(gt) == 0: continue # we only calculate non-neutral label hit rate
 
-        # (pred) process
+        # pred 处理
         pred = string_to_list(name2pred[name])
         pred = [item.lower().strip() for item in pred]
         pred = list(set(func_map_label_to_synonym(pred, format_mapping, raw_mapping, wheel_map, metric)))
 
-        # (candidata_labels) process
-        candidates = list(set(func_map_label_to_synonym(candidata_labels, format_mapping, raw_mapping, wheel_map, metric)))
-
-        # metric calculation
+        # 指标计算，主要是命中率和召回率
         hitrates.append(len(set(pred) & set(gt)))
-        if len(set(pred) & set(candidates)) == 0:
+        # hitrates.append(len(set(pred) & set(gt)) / len(set(gt) & set(candidates)))
+        if len(set(pred) & set(candidates)) == 0: # 预测结果不在候选集中
             mscores.append(0)
         else:
             score = len(set(pred) & set(gt)) / len(set(pred) & set(candidates))
+            # if score < 1:
+            #     print(pred, gt, name2pred[name], name2gt[name])
             mscores.append(score)
     if inter_print: print (f'after filter sample number: {len(hitrates)}')
-    avg_hitrate, avg_mscore = np.mean(hitrates), np.mean(mscores)
+    avg_hitrate, avg_mscore = np.mean(hitrates), np.mean(mscores) # 平均命中率，以及命中的单词占总预测结果的个数
     if inter_print: print (f'avg_hitrate: {avg_hitrate}; avg_mscore: {avg_mscore}')
     return avg_hitrate, avg_mscore
 

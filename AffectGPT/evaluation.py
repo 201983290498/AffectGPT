@@ -1,19 +1,6 @@
 import os
-import re
-import time
-import copy
-import tqdm
 import glob
-import json
-import math
-import scipy
-import shutil
-import random
-import pickle
-import argparse
-import itertools
 import numpy as np
-import pandas as pd
 from pathlib import Path
 import datetime
 
@@ -26,12 +13,11 @@ import numpy as np
 from toolkit.utils.read_files import *
 from toolkit.utils.qwen import *
 from toolkit.utils.functions import *
-from my_affectgpt.evaluation.wheel import func_get_name2reason
 from my_affectgpt.datasets.builders.image_text_pair_builder import * # 加载所有dataset cls
 from my_affectgpt.evaluation.ew_metric import *
 from my_affectgpt.evaluation.wheel import *
 
-def search_for_result_root(input_dir, inter_print=True):
+def search_for_result_root(input_dir, inter_print=True): # 获取 input_dir 下 包含 所有的训练存储的记录。
     candidates = glob.glob(input_dir + '*')
     root_candidates = [root for root in candidates if os.path.isdir(root)]
     if len(root_candidates) == 0:
@@ -56,7 +42,7 @@ def search_for_result_root(input_dir, inter_print=True):
     if inter_print: print ('Targetroot: ', targetroot)
     if inter_print: print ('Saved result files ', maxcount)
     # report last file info
-    last_file = sorted(glob.glob(targetroot + '/checkpoint*'))[-1]
+    last_file = sorted(glob.glob(targetroot + '/checkpoint*'))[-1] # 找到最后一个 checkpoint 文件
     file_stat = Path(last_file).stat()
     creation_time = file_stat.st_ctime
     if inter_print: print("Last result file creation time:", datetime.datetime.fromtimestamp(creation_time))
@@ -118,13 +104,13 @@ def func_read_batch_calling_model(modelname):
     model_path = config.PATH_TO_LLM[modelname]
     # 禁用to or编译问题
     # 设置compilation_config=0来完全禁用编译
-    llm = LLM(model=model_path, compilation_config=0, gpu_memory_utilization=0.6)
+    llm = LLM(model=model_path, compilation_config=0, gpu_memory_utilization=0.85)
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     sampling_params = SamplingParams(temperature=0.7, top_p=0.8, repetition_penalty=1.05, max_tokens=512)
     return llm, tokenizer, sampling_params
 
 
-## similarity score for: openset <-> discrete
+## 计算 openset 与离散标签之间的相似度得分
 def calculate_discrete_zeroshot(epoch_root, name2gt, llm, tokenizer, sampling_params, inter_print=True):
     # epoch_root=(name2reason) => openset
     openset_npz = epoch_root[:-4]+'-openset.npz'
@@ -133,7 +119,7 @@ def calculate_discrete_zeroshot(epoch_root, name2gt, llm, tokenizer, sampling_pa
                                      llm=llm, tokenizer=tokenizer, sampling_params=sampling_params)
     # 计算 hitrate, mscore
     hitrate, mscore = hitrate_metric_calculation(name2gt=name2gt, openset_npz=openset_npz, inter_print=inter_print)
-    return hitrate, mscore
+    return hitrate, mscore, 2 * hitrate * mscore / (hitrate + mscore)
 
 
 def calculate_ov_zeroshot(epoch_root, name2gt, llm, tokenizer, sampling_params, inter_print=True):
@@ -154,7 +140,7 @@ def calculate_ov_zeroshot(epoch_root, name2gt, llm, tokenizer, sampling_params, 
     return fscore, precision, recall
 
 
-## similarity score for: openset -> sentiment <-> sentiment
+## 为下面的标签计算相似度得分： openset -> sentiment <-> sentiment
 def calculate_dimension_zeroshot(epoch_root, name2gt, llm, tokenizer, sampling_params, inter_print=True):
 
     # 1. 抽取 openset
@@ -205,9 +191,9 @@ def main_zeroshot_scores(input_dir, debug=False, test_epochs='', inter_print=Tru
         input_dir = search_for_result_root(input_dir, inter_print)
     if inter_print: print (f'process root: {input_dir}')
 
-    # read dataset infos
-    dataset = func_read_datasetname(input_dir)
-    disordim_flag = get_discrete_or_dimension_flag(dataset)
+    # 读取dataset info
+    dataset = func_read_datasetname(input_dir) # 根据 input_dir 获取到想要的 数据集名称。
+    disordim_flag = get_discrete_or_dimension_flag(dataset) # 获取评估的维度，主要包含了情感分类discrete、数值dimension以及开放ov
     if inter_print: print (f'process dataset: {dataset} => {disordim_flag}')
     dataset_cls = get_dataset2cls(dataset)
     name2gt = dataset_cls.get_test_name2gt()
@@ -216,7 +202,7 @@ def main_zeroshot_scores(input_dir, debug=False, test_epochs='', inter_print=Tru
     # discrete: 自然语言形式标签；dimension: float score
     if disordim_flag == 'discrete':
         _, idx2emo = get_emo2idx_idx2emo(dataset_cls)
-        # => update (name2gt)
+        # => 更新 (name2gt)
         for name in name2gt:
             gt = name2gt[name]
             if not isinstance(gt, str):
@@ -226,9 +212,9 @@ def main_zeroshot_scores(input_dir, debug=False, test_epochs='', inter_print=Tru
     # load model
     llm, tokenizer, sampling_params = None, None, None
     if debug == False:
-        llm, tokenizer, sampling_params = func_read_batch_calling_model(modelname='Qwen25')
+        llm, tokenizer, sampling_params = func_read_batch_calling_model(modelname='Qwen25') # 用vllm读取模型
     
-    # main process
+    # main process 不同情感论的 评估指标
     whole_score1s, whole_score2s, whole_score3s = [], [], []
     for epoch_root in sorted(glob.glob(input_dir + '/*.npz')):
 
@@ -246,8 +232,8 @@ def main_zeroshot_scores(input_dir, debug=False, test_epochs='', inter_print=Tru
 
         # 1. score calculation
         if disordim_flag == 'discrete':
-            hitrate, _ = calculate_discrete_zeroshot(epoch_root, name2gt, llm, tokenizer, sampling_params, inter_print)
-            if inter_print: print(f'hitrate: {hitrate}')
+            hitrate, _, f1 = calculate_discrete_zeroshot(epoch_root, name2gt, llm, tokenizer, sampling_params, inter_print)
+            if inter_print: print(f'hitrate: {hitrate}, f1: {f1}')
             whole_score1s.append(hitrate)
             whole_score2s.append(0)
             whole_score3s.append(0)
@@ -306,18 +292,15 @@ def func_return_scores_one(modelname=None, dataset_candidates='affectgpt'):
 
 
 if __name__ == "__main__":
-
     ## step1：测试新模型下的结果
     for modelname in [
                     'emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz',
                     ]:
         for dataset in ["mer2023", "mer2024", "meld", "iemocapfour", "cmumosi", "cmumosei", "sims", "simsv2"]: #  "ovmerdplus"
-            main_zeroshot_scores(f"output/results-{dataset}/{modelname}")
+            main_zeroshot_scores(f"output/results-description-{dataset}/{modelname}")
 
 
     ## step2: 结果汇总展示
-    for modelname in [
-                    "emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz",
-                    ]:
+    for modelname in ["emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz"]:
         print_per_dataset, avg_score = func_return_scores_one(modelname=modelname)
         print (modelname, " ".join(print_per_dataset))

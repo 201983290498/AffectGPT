@@ -20,7 +20,7 @@ class Config:
         runner_config = self.build_runner_config(cfg_path, **user_config)
         dataset_config = self.build_dataset_config(cfg_path, **user_config)
         inference_config = self.build_inference_config(cfg_path, **user_config) # 新加一个 inference config 文件
-        self.config = OmegaConf.merge(runner_config, model_config, dataset_config, inference_config)
+        self.config = OmegaConf.merge(runner_config, model_config, dataset_config, inference_config)   # 合并用户配置和文件配置
 
     def _build_opt_list(self, opts):
         opts_dot_list = self._convert_to_dot_list(opts)
@@ -38,7 +38,7 @@ class Config:
         return [(opt + "=" + value) for opt, value in zip(opts[0::2], opts[1::2])] # --options key1 value1 key2 value2
     
     @staticmethod
-    def build_runner_config(cfg_path, **kwargs):
+    def build_runner_config(cfg_path, **kwargs):  # 加载「运行配置」
         config = OmegaConf.load(cfg_path) # './xxx/xxx/multimodal_llama_stage3_finetune.yaml'
         output_dir = os.path.basename(cfg_path).rsplit('.', 1)[0]
         output_dir = os.path.join('output', output_dir)
@@ -56,10 +56,10 @@ class Config:
                 model_config,
                 {"run": config['run']}
             )
-        return model_config
+        return model_config  # 返回合并后的运行配置
 
     @staticmethod
-    def build_model_config(cfg_path, **kwargs):
+    def build_model_config(cfg_path, **kwargs):  # 加载「模型配置」
         config = OmegaConf.load(cfg_path)
         model = config.get("model", None)
         assert model is not None, "Missing model configuration file."
@@ -79,7 +79,7 @@ class Config:
         return model_config
     
     @staticmethod
-    def build_inference_config(cfg_path, **kwargs):
+    def build_inference_config(cfg_path, **kwargs):  # 加载「推理配置」
         config = OmegaConf.load(cfg_path)
         inference = config.get("inference", None)
         assert inference is not None, "Missing inference configuration file."
@@ -99,7 +99,7 @@ class Config:
         return inference_config
 
     @staticmethod
-    def build_dataset_config(cfg_path, **kwargs):
+    def build_dataset_config(cfg_path, **kwargs):  # 加载「数据集配置」
         config = OmegaConf.load(cfg_path)
         datasets = config.get("datasets", None)
         assert datasets is not None, "Missing datasets configuration file."
@@ -164,7 +164,7 @@ class Config:
         logging.info(f"\n======  Model Attributes  ======")
         logging.info(self._convert_node_to_json(self.config.model))
 
-    # write into logging
+    # write into logging   将 OmegaConf 配置节点 转换为 格式化的 JSON 字符串
     def _convert_node_to_json(self, node):
         container = OmegaConf.to_container(node, resolve=True)
         return json.dumps(container, indent=4, sort_keys=True)

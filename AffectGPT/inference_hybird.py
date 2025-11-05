@@ -153,8 +153,8 @@ if __name__ == "__main__":
     datasets_cfg = cfg.datasets_cfg
     inference_cfg = cfg.inference_cfg
     device = 'cuda:{}'.format(inference_cfg.gpu)
-    # inference_datasets = ['MER2023', 'MER2024', 'MELD', 'IEMOCAPFour', 'CMUMOSI', 'CMUMOSEI', 'SIMS', 'SIMSv2', 'OVMERDPlus']
-    inference_datasets = ['CMUMOSEI', 'MER2024', 'IEMOCAPFour', 'SIMSv2']
+    inference_datasets = ['MER2023', 'MER2024', 'MELD', 'IEMOCAPFour', 'CMUMOSI', 'CMUMOSEI', 'SIMS', 'SIMSv2', 'OVMERDPlus']
+    # inference_datasets = ['CMUMOSEI', 'MER2024', 'IEMOCAPFour', 'SIMSv2']
     set_config_messages(args.zeroshot, args.outside_user_message)
     print ('======== Step1: cfg pre-analysis ========')
     # 支持 ckpt_root / ckpt_name 两种类型输入 => (ckpt3_root)

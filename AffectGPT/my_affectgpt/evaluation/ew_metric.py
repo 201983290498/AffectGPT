@@ -12,7 +12,7 @@ import glob
 import tqdm
 import numpy as np
 from sklearn.metrics import f1_score, accuracy_score
-
+import config
 from toolkit.utils.read_files import *
 from toolkit.utils.qwen import *
 from toolkit.utils.functions import *
@@ -30,14 +30,14 @@ def func_read_batch_calling_model(modelname):
 ## reason -> ov labels(从答案中抽取情绪)
 def extract_openset_batchcalling(reason_root=None, reason_npz=None, update_npz=None, reason_csv=None, name2reason=None,
                                  store_root=None, store_npz=None, 
-                                 modelname=None, llm=None, tokenizer=None, sampling_params=None, batch_size=64):
+                                 modelname=config.MODEL_NAME, llm=None, tokenizer=None, sampling_params=None, batch_size=64):
     
     ## load model
     if (llm is None) or (tokenizer is None) or (sampling_params is None):
         if modelname is None:
             raise ValueError("modelname must be provided when llm, tokenizer, or sampling_params is None")
         model_path = config.PATH_TO_LLM[modelname]
-        llm = LLM(model=model_path, compilation_config=0, gpu_memory_utilization=0.6)
+        llm = LLM(model=model_path, compilation_config=0, gpu_memory_utilization=0.95, max_model_len=8192)
         tokenizer = AutoTokenizer.from_pretrained(model_path)
         sampling_params = SamplingParams(temperature=0.7, top_p=0.8, repetition_penalty=1.05, max_tokens=512)
    
@@ -88,14 +88,14 @@ def extract_openset_batchcalling(reason_root=None, reason_npz=None, update_npz=N
 ## ov labels -> sentiment(从情绪中抽取出正负向。)
 def openset_to_sentiment_batchcalling(openset_npz=None, name2openset=None, 
                                       store_npz=None,
-                                      modelname=None, llm=None, tokenizer=None, sampling_params=None, batch_size=64):
+                                      modelname=config.MODEL_NAME, llm=None, tokenizer=None, sampling_params=None, batch_size=64):
     
     ## load model
     if (llm is None) or (tokenizer is None) or (sampling_params is None):
         if modelname is None:
             raise ValueError("modelname must be provided when llm, tokenizer, or sampling_params is None")
         model_path = config.PATH_TO_LLM[modelname]
-        llm = LLM(model=model_path, compilation_config=0, gpu_memory_utilization=0.6)
+        llm = LLM(model=model_path, compilation_config=0, gpu_memory_utilization=0.95, max_model_len=8192)
         tokenizer = AutoTokenizer.from_pretrained(model_path)
         sampling_params = SamplingParams(temperature=0.7, top_p=0.8, repetition_penalty=1.05, max_tokens=512)
    

@@ -4,7 +4,7 @@ import numpy as np
 from pathlib import Path
 import datetime
 
-import config
+from regex import B
 from vllm import LLM, SamplingParams
 from transformers import AutoTokenizer
 
@@ -104,7 +104,7 @@ def func_read_batch_calling_model(modelname):
     model_path = config.PATH_TO_LLM[modelname]
     # 禁用to or编译问题
     # 设置compilation_config=0来完全禁用编译
-    llm = LLM(model=model_path, compilation_config=0, gpu_memory_utilization=0.85)
+    llm = LLM(model=model_path, compilation_config=0, gpu_memory_utilization=0.95)
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     sampling_params = SamplingParams(temperature=0.7, top_p=0.8, repetition_penalty=1.05, max_tokens=512)
     return llm, tokenizer, sampling_params
@@ -116,7 +116,7 @@ def calculate_discrete_zeroshot(epoch_root, name2gt, llm, tokenizer, sampling_pa
     openset_npz = epoch_root[:-4]+'-openset.npz'
     if not os.path.exists(openset_npz):
         extract_openset_batchcalling(reason_npz=epoch_root, store_npz=openset_npz,
-                                     llm=llm, tokenizer=tokenizer, sampling_params=sampling_params)
+                                     llm=llm, tokenizer=tokenizer, sampling_params=sampling_params, batch_size=args.batch_size)
     # 计算 hitrate, mscore
     hitrate, mscore = hitrate_metric_calculation(name2gt=name2gt, openset_npz=openset_npz, inter_print=inter_print)
     return hitrate, mscore, 2 * hitrate * mscore / (hitrate + mscore)
@@ -128,7 +128,7 @@ def calculate_ov_zeroshot(epoch_root, name2gt, llm, tokenizer, sampling_params, 
     openset_npz = epoch_root[:-4]+'-openset.npz'
     if not os.path.exists(openset_npz):
         extract_openset_batchcalling(reason_npz=epoch_root, store_npz=openset_npz,
-                                     llm=llm, tokenizer=tokenizer, sampling_params=sampling_params)
+                                     llm=llm, tokenizer=tokenizer, sampling_params=sampling_params, batch_size=args.batch_size)
         
     # 计算 EW-based metrics
     name2pred = {}
@@ -147,13 +147,13 @@ def calculate_dimension_zeroshot(epoch_root, name2gt, llm, tokenizer, sampling_p
     openset_npz = epoch_root[:-4]+'-openset.npz'
     if not os.path.exists(openset_npz):
         extract_openset_batchcalling(reason_npz=epoch_root, store_npz=openset_npz,
-                                     llm=llm, tokenizer=tokenizer, sampling_params=sampling_params)
-    
+                                     llm=llm, tokenizer=tokenizer, sampling_params=sampling_params, batch_size=args.batch_size)
+
     # 2. 将 openset 转成 [positive, negative, neutral]
     sentiment_npz = openset_npz[:-4]+'-sentiment.npz'
     if not os.path.exists(sentiment_npz):
         openset_to_sentiment_batchcalling(openset_npz=openset_npz, store_npz=sentiment_npz,
-                                          llm=llm, tokenizer=tokenizer, sampling_params=sampling_params)
+                                          llm=llm, tokenizer=tokenizer, sampling_params=sampling_params, batch_size=args.batch_size)
 
     # 3. 计算 scores
     ## 3.0 openset 自然语言形式标签 -> float
@@ -269,7 +269,7 @@ def main_zeroshot_scores(input_dir, debug=False, test_epochs='', inter_print=Tru
     return best_score1, best_score2, best_score3
 
 
-
+BASE_DIR = "outputs/{version}/results"
 def func_return_scores_one(modelname=None, dataset_candidates='affectgpt'):
     ## => (process datasets)
     if dataset_candidates=='affectgpt':
@@ -279,7 +279,7 @@ def func_return_scores_one(modelname=None, dataset_candidates='affectgpt'):
 
     print_per_dataset, avg_score = [], []
     for dataset in process_datasets:
-        process_root = f"output/results-{dataset}/{modelname}"
+        process_root = f"{BASE_DIR}-{dataset}/{modelname}"
         ## 计算指标
         score1, score2, score3 = main_zeroshot_scores(process_root, debug=True, test_epochs='', inter_print=False)
         print_per_dataset.extend([score1])
@@ -290,14 +290,23 @@ def func_return_scores_one(modelname=None, dataset_candidates='affectgpt'):
     print_per_dataset = ["& %.2f" %(item*100) for item in print_per_dataset]
     return print_per_dataset, avg_score
 
+def get_args():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--version', type=str, default='raw_postprocess_Qwen25', help='model name for evaluation')
+    parser.add_argument('--batch_size', type=int, default=64, help='batch size for llm calling')
+    args = parser.parse_args()
+    return args
 
+args = get_args()
+BASE_DIR = f"outputs/{args.version}/results"
 if __name__ == "__main__":
     ## step1：测试新模型下的结果
     for modelname in [
                     'emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz',
                     ]:
-        for dataset in ["mer2023", "mer2024", "meld", "iemocapfour", "cmumosi", "cmumosei", "sims", "simsv2"]: #  "ovmerdplus"
-            main_zeroshot_scores(f"output/results-description-{dataset}/{modelname}")
+        for dataset in ["mer2023", "mer2024", "meld", "iemocapfour", "cmumosi", "cmumosei", "sims", "simsv2", "ovmerdplus"]: 
+            main_zeroshot_scores(f"{BASE_DIR}-{dataset}/{modelname}", debug=True)
 
 
     ## step2: 结果汇总展示

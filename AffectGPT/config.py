@@ -6,12 +6,14 @@ AFFECTGPT_ROOT = './'
 EMOTION_WHEEL_ROOT = './emotion_wheel'
 RESULT_ROOT = os.path.join(AFFECTGPT_ROOT, 'output/results')
 USER_MESSAGES = None # 用的问题和答案
+MODEL_NAME='Qwen3-32B'  # 'Qwen25'  # 'Qwen3-32B'
 
 #######################
 ## 所有模型的存储路径
 #######################
 PATH_TO_LLM = {
     'Qwen25': '/data/testmllm/models/Qwen/Qwen2.5-7B-Instruct',
+    'Qwen3-32B': '/data/testmllm/models/Qwen/Qwen3-30B-A3B-Instruct-2507',
 }
 
 PATH_TO_VISUAL = {

@@ -146,7 +146,7 @@ AffectGPT
 2. Inference Process 
 ```bash
 # Prompt1: Generate OV labels
-PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=3 pybug 5678 inference_hybird.py --zeroshot --dataset='inferenceData' --options "inference.test_epochs=30-60" "inference.skip_epoch=5" --cfg-path=train_configs/emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz.yaml  
+PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=3 pybug 5678 inference_hybird_batch2.py --zeroshot --dataset='inferenceData' --options "inference.test_epochs=30-60" "inference.skip_epoch=5" --cfg-path=train_configs/emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz.yaml  
 
 # Prompt2: Generate Emotion Description
 PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=1 python inference_hybird.py --zeroshot --dataset='inferenceData' --outside_user_message="Please infer the person's emotional state and provide your reasoning process."   --options "inference.test_epochs=30-60" "inference.skip_epoch=5" "inference.base_root=output/results-description" --cfg-path=train_configs/emercoarse_highlevelfilter4_outputhybird_bestsetup_bestfusion_lz.yaml

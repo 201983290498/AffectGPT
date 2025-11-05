@@ -114,7 +114,7 @@ inference:
   face_or_frame: 'xxx'   # 'multiface_audio_face_text'
   ######################################################
 
-  base_root: 'output2/results'
+  base_root: 'outputs/v2_self_infer/results'
   
   # inference ckpt
   ckpt_root: xxx

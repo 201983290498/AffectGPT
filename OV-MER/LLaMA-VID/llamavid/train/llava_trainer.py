@@ -14,7 +14,9 @@ from fairscale.optim import OSS
 from torch.utils.data import Sampler
 
 from transformers import Trainer
-from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
+from transformers.trainer import (
+    ALL_LAYERNORM_LAYERS,
+)
 from transformers.trainer_pt_utils import (
     get_parameter_names,
 )

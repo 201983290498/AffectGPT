@@ -222,7 +222,7 @@ CUDA_VISIBLE_DEVICES=0 python evaluation-scoreonly.py
 
 Ensure you are using the fixed version of the code, where imports have been updated to import from `transformers.modeling_utils`.
 
-### 2. 显存不足 / Out of Memory
+### 2. 显存不足/内存不足 / Out of Memory
 **问题 / Problem**: CUDA out of memory error
 
 **解决方案 / Solution**: 

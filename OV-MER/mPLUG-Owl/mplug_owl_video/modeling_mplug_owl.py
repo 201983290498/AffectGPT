@@ -39,8 +39,7 @@ from transformers.modeling_outputs import (
     BaseModelOutputWithPooling,
     BaseModelOutputWithPastAndCrossAttentions
 )
-from transformers.modeling_utils import PreTrainedModel
-from transformers.pytorch_utils import find_pruneable_heads_and_indices, prune_linear_layer
+from transformers.modeling_utils import PreTrainedModel, find_pruneable_heads_and_indices, prune_linear_layer
 from transformers.utils import (
     ModelOutput,
     add_start_docstrings,
